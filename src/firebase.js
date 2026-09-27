@@ -3,7 +3,7 @@ import { getFirestore } from 'firebase/firestore';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
 // Proyecto de Firebase: ecodrive-7735e
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: 'AIzaSyD8nNbCgoY95e0NPC1WqSNykCsZm6w9fwY',
   authDomain: 'ecodrive-7735e.firebaseapp.com',
   projectId: 'ecodrive-7735e',
