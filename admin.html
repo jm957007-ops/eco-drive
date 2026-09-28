@@ -9,6 +9,51 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root{--surface:#FFFFFF;--surface2:#F1F5F4;--ink:#0B3140;--muted:#5B7680;--line:#DCE6E4;--accent:#FFB400;--accentInk:#0B3140;--go:#0E8A73;--danger:#D6334A}
+@media (prefers-color-scheme:dark){:root{--surface:#172F37;--surface2:#1F3B44;--ink:#EAF4F3;--muted:#8FAAB1;--line:#2A4A53;--go:#2EC4A2;--danger:#FF5C72}}
+body.admin{margin:0;color:var(--ink);font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;height:auto}
+body.admin button{font:inherit;color:inherit;cursor:pointer}
+body.admin h2{font-size:22px;margin:4px 0 12px;font-weight:800}
+body.admin h3{font-size:17px}
+.brand{font-weight:800;font-size:24px;letter-spacing:-.03em;background:var(--accent);color:var(--accentInk);padding:4px 12px 6px;border-radius:14px 14px 14px 4px;box-shadow:none}
+.muted{color:var(--muted);font-size:14px}.small{font-size:13px}
+.mini{border:0;border-radius:10px;padding:6px 10px;font-weight:700}
+.in{width:100%;box-sizing:border-box;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:12px;font:inherit;margin-top:8px}
+.cta{width:100%;border:0;background:var(--accent);color:var(--accentInk);font-weight:800;font-size:18px;border-radius:16px;padding:16px;margin-top:12px}
+.cta.dark{background:var(--ink);color:var(--surface)}
+.toast{position:fixed;left:50%;top:70px;transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:12px;font-weight:600;z-index:3000;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+/* ---------- Panel de administrador ---------- */
+body.admin{overflow:auto;background:var(--surface2)}
+.adm-top{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 12px;background:var(--surface2)}
+.adm-top .mini{margin-left:auto;background:var(--surface);border:1.5px solid var(--line)}
+.adm{max-width:720px;margin:0 auto;padding:0 16px calc(env(safe-area-inset-bottom,0px) + 40px)}
+.adm .box{background:var(--surface);border-radius:20px;padding:16px;margin-top:12px}
+.tabs{display:flex;gap:6px;background:var(--surface);border-radius:999px;padding:4px;margin-top:4px}
+.tabs button{flex:1;border:0;background:none;border-radius:999px;padding:10px 6px;font-weight:700;color:var(--muted)}
+.tabs button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
+.stats div{background:var(--surface);border-radius:16px;padding:12px}
+.stats b{display:block;font-size:24px;font-weight:800}
+.fila{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.fila:last-child{border-bottom:0}
+.fila .mid{flex:1;min-width:0}
+.fila .mid b{display:block}
+.badge{display:inline-block;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:700;background:var(--surface2)}
+.badge.ok{background:#D3F2E8;color:#0B5F4E}
+.badge.warn{background:#FFF1C7;color:#6B4A00}
+.badge.bad{background:#FBD9DE;color:#8A1C2C}
+.btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.btns button,.btns a{border:0;border-radius:10px;padding:8px 12px;font-weight:700;font-size:14px;background:var(--surface2);color:var(--ink);text-decoration:none}
+.btns .go{background:var(--go);color:#fff}
+.btns .bad{background:var(--danger);color:#fff}
+.grid4{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.grid4 label{font-size:13px;color:var(--muted)}
+.grid4 input,.adm .in{margin-top:4px}
+.enlinea{width:9px;height:9px;border-radius:50%;background:var(--go);display:inline-block;margin-right:4px}
+@media (min-width:600px){.stats{grid-template-columns:repeat(4,1fr)}.grid4{grid-template-columns:repeat(4,1fr)}}
+</style>
 </head>
 <body class="admin">
 <header class="adm-top">
