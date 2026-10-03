@@ -5,6 +5,9 @@ import './estilos.css';
 export { L };
 // Valores por defecto. El panel de administrador los sobrescribe desde Firestore (ecodrive_config/tarifas).
 export const CONF = { comision: 0.10 };
+// Envío económico (ruta compartida): descuento al cliente y pago fijo al repartidor por paquete
+export const ECO = { descuento: 0.35, pagoRep: 20, minimo: 25 };
+export const VENTANAS = { m: '11 AM – 2 PM', t: '4 – 7 PM' };
 
 export const TIPOS = {
   moto: { n: 'Moto', d: 'Sobres y paquetes chicos, hasta 10 kg', ic: '🏍️', base: 25, km: 6, min: 0.8, minimo: 35 },
@@ -17,13 +20,23 @@ export function aplicarTarifas(d) {
     ['base', 'km', 'min', 'minimo'].forEach((c) => { if (typeof x[c] === 'number' && x[c] >= 0) TIPOS[k][c] = x[c]; });
   });
   if (typeof d.comision === 'number' && d.comision >= 0 && d.comision < 1) CONF.comision = d.comision;
+  const e = d.eco;
+  if (e) {
+    if (typeof e.descuento === 'number' && e.descuento >= 0 && e.descuento < 0.9) ECO.descuento = e.descuento;
+    if (typeof e.pagoRep === 'number' && e.pagoRep >= 0) ECO.pagoRep = e.pagoRep;
+    if (typeof e.minimo === 'number' && e.minimo >= 0) ECO.minimo = e.minimo;
+  }
 }
 // Lo que recibe el repartidor por un envío (usa la comisión guardada en el pedido)
-export const neto = (p) => (p.precio || 0) * (1 - (p.comision ?? CONF.comision));
+// En envíos económicos el repartidor gana un monto fijo por paquete (pagoRep, guardado en el pedido)
+export const neto = (p) => (p.modo === 'economico' && typeof p.pagoRep === 'number' ? p.pagoRep : (p.precio || 0) * (1 - (p.comision ?? CONF.comision)));
 export const precio = (t, km, min) => {
   const x = TIPOS[t];
   return Math.max(x.minimo, Math.round((x.base + km * x.km + min * x.min) / 5) * 5);
 };
+
+// Precio del modo económico: el precio normal menos el descuento, redondeado a $5, con mínimo propio
+export const precioEco = (t, km, min) => Math.max(ECO.minimo, Math.round((precio(t, km, min) * (1 - ECO.descuento)) / 5) * 5);
 
 // Accesos rápidos (coordenadas aproximadas)
 export const LUGARES = [

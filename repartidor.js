@@ -14,7 +14,7 @@ const PAGO_TXT = {
   recibe: (p) => `Cobra ${money(p.precio)} a quien recibe al entregar.`,
 };
 
-const S = { paso: 'cargando', rep: null, enLinea: false, pos: null, disp: [], mios: [], activo: null, fin: null, contra: {}, enviadas: {}, ocupado: false };
+const S = { paso: 'cargando', rep: null, enLinea: false, pos: null, disp: [], mios: [], activo: null, activos: [], sel: null, fin: null, contra: {}, enviadas: {}, ocupado: false };
 let uid = null, unDisp = null, unMios = null, rutaDe = null, ruta = null, ultPedido = 0, ultRep = 0, vistos = new Set();
 
 // ---------- Mapa ----------
@@ -28,8 +28,7 @@ function dibujar(encuadrar = true) {
   if (S.paso === 'activo' && S.activo) {
     const p = S.activo;
     if (ruta) L.polyline(ruta.coords, { color: '#0B3140', weight: 6, opacity: 0.85 }).addTo(capa);
-    L.marker([p.origen.lat, p.origen.lng], { icon: icono('o') }).addTo(capa);
-    L.marker([p.destino.lat, p.destino.lng], { icon: icono('d') }).addTo(capa);
+    paradas().forEach((x) => L.marker([x.pt.lat, x.pt.lng], { icon: icono(x.t === 'recoger' ? 'o' : 'd') }).addTo(capa));
     const meta = p.estado === 'asignado' ? p.origen : p.destino;
     pts.push([meta.lat, meta.lng]);
   } else if (S.enLinea) {
@@ -65,7 +64,10 @@ function iniciarGPS() {
 }
 
 // ---------- Datos del repartidor ----------
-const hoy = () => S.mios.filter((p) => p.estado === 'entregado' && esHoy(p.entregado));
+// El repartidor cumple cuando entrega al cliente o cuando deja el paquete en un negocio aliado
+const hecho = (p) => ['entregado', 'enpunto'].includes(p.estado);
+const cuando = (p) => p.dejado || p.entregado;
+const hoy = () => S.mios.filter((p) => hecho(p) && esHoy(cuando(p)));
 const califProm = () => {
   const c = S.mios.filter((p) => p.calif);
   return c.length ? c.reduce((s, p) => s + p.calif, 0) / c.length : 5;
@@ -74,6 +76,33 @@ const repInfo = () => ({
   uid, nombre: S.rep.nombre, tel: S.rep.tel, vehiculo: S.rep.vehiculo, placas: S.rep.placas,
   calif: Math.round(califProm() * 10) / 10,
 });
+
+// ---------- Ruta de paradas (un envío express, o varios de una ruta económica) ----------
+// Cada paquete aporta una parada: recoger (si está "asignado") o entregar (si está "recogido").
+// Se ordenan de la más cercana a la más lejana, y el repartidor puede elegir ir primero a otra.
+function paradas() {
+  const resto = S.activos.map((p) => (p.estado === 'asignado' ? { p, t: 'recoger', pt: p.origen } : { p, t: 'entregar', pt: p.destino }));
+  const res = [];
+  let cur = S.pos;
+  while (resto.length) {
+    let i = 0;
+    if (cur) {
+      let mejor = Infinity;
+      resto.forEach((x, k) => { const d = dist(cur, x.pt); if (d < mejor) { mejor = d; i = k; } });
+    }
+    const [x] = resto.splice(i, 1);
+    res.push(x); cur = x.pt;
+  }
+  const k = res.findIndex((x) => x.p.id === S.sel);
+  if (k > 0) res.unshift(...res.splice(k, 1));
+  return res;
+}
+const fijarActivo = () => { S.activo = paradas()[0]?.p || null; };
+async function irA(id) {
+  S.sel = id; fijarActivo(); render();
+  if (S.activo && rutaDe !== S.activo.id) { rutaDe = S.activo.id; ruta = await calcularRuta(S.activo.origen, S.activo.destino); }
+  dibujar();
+}
 
 // ---------- Vistas ----------
 function vRegistro() {
@@ -106,7 +135,8 @@ function vPanel() {
   <div class="earn"><div><span class="muted">Hoy</span><b>${money(gan)}</b></div><div><span class="muted">Entregas</span><b>${h.length}</b></div><div><span class="muted">Calificación</span><b>★ ${califProm().toFixed(1)}</b></div></div>
   <button class="cta ${S.enLinea ? 'dark' : 'go'}" data-act="linea">${S.enLinea ? 'Desconectarme' : 'Conectarme'}</button>
   ${S.enLinea ? (lista.length ? lista.map(tarjeta).join('') : '<p class="row"><span class="pulse"></span><span>Conectado. Te avisamos cuando haya un envío cerca.</span></p>')
-    : `<p class="muted">Solo recibes envíos de ${TIPOS[S.rep.tipo].n.toLowerCase()}. Comisión de la app: ${Math.round(CONF.comision * 100)}%.</p>`}`;
+    : `<p class="muted">Solo recibes envíos de ${TIPOS[S.rep.tipo].n.toLowerCase()}. Comisión de la app: ${Math.round(CONF.comision * 100)}%.</p>`}
+  <p class="muted small">Las rutas económicas, con varios paquetes, te las asigna Eco Drive y te pagan una cantidad fija por paquete.</p>`;
 }
 
 function tarjeta(p) {
@@ -128,25 +158,35 @@ function tarjeta(p) {
 }
 
 function vActivo() {
-  const p = S.activo, recoger = p.estado === 'asignado', meta = recoger ? p.origen : p.destino;
-  const quien = recoger ? { n: 'quien envía', tel: p.remitente.tel } : { n: p.recibe.nombre, tel: p.recibe.tel };
-  return `<div class="grab"></div><h2>${recoger ? 'Recoge el paquete' : 'Entrega el paquete'}</h2>
+  const l = paradas();
+  if (!l.length) return '<div class="grab"></div><p class="muted">Cargando…</p>';
+  const s = l[0], p = s.p, recoger = s.t === 'recoger', meta = s.pt, lote = l.length > 1;
+  const punto = !recoger && !!p.puntoId;
+  const quien = recoger ? { n: 'quien envía', tel: p.remitente.tel } : punto ? { n: p.punto.nombre, tel: p.punto.tel || p.recibe.tel } : { n: p.recibe.nombre, tel: p.recibe.tel };
+  return `<div class="grab"></div>
+  ${lote ? `<p class="muted" style="margin:0">Ruta de ${S.activos.length} paquetes · quedan ${l.length} paradas</p>` : ''}
+  <h2>${recoger ? 'Recoge el paquete' : punto ? 'Deja el paquete en el negocio' : 'Entrega el paquete'}</h2>
   <ul class="list" style="margin-top:-6px"><li><div><span class="ico">${recoger ? '🟢' : '🟨'}</span><span><b>${esc(meta.n)}</b><span class="muted">${esc(meta.dir)}</span></span></div></li></ul>
   <div class="acts">
     <a href="${gmaps(meta)}" target="_blank" rel="noopener"><span>🧭</span>Navegar</a>
     <a href="tel:${tel10(quien.tel)}"><span>📞</span>Llamar</a>
-    <a href="${wa(quien.tel, recoger ? 'Hola, soy tu repartidor de Eco Drive. Voy por el paquete.' : `Hola ${p.recibe.nombre}, soy el repartidor de Eco Drive. Voy en camino con tu paquete.`)}" target="_blank" rel="noopener"><span>💬</span>WhatsApp</a>
+    <a href="${wa(quien.tel, recoger ? 'Hola, soy tu repartidor de Eco Drive. Voy por el paquete.' : punto ? 'Hola, soy repartidor de Eco Drive. Voy en camino a dejar un paquete en tu negocio.' : `Hola ${p.recibe.nombre}, soy el repartidor de Eco Drive. Voy en camino con tu paquete.`)}" target="_blank" rel="noopener"><span>💬</span>WhatsApp</a>
   </div>
   <p class="muted">${esc(p.item)} · ${PAGO_TXT[p.pago](p)}</p>
   ${recoger ? `<button class="cta" data-act="recogi" ${S.ocupado ? 'disabled' : ''}>Ya recogí el paquete</button>`
+    : punto ? `<p class="muted">Entrégalo en el mostrador de ${esc(p.punto.nombre)}${p.punto.horario ? ' (' + esc(p.punto.horario) + ')' : ''}. Quien lo recoge pasará con su propio código.</p>
+      <button class="cta go" data-act="dejar" ${S.ocupado ? 'disabled' : ''}>Ya lo dejé en el negocio</button>`
     : `<label class="lbl" for="pin">Código de entrega que te dice ${esc(p.recibe.nombre)}</label>
       <input class="in" id="pin" inputmode="numeric" maxlength="4" placeholder="4 dígitos" style="font-size:24px;letter-spacing:.3em;text-align:center">
-      <button class="cta go" data-act="entregar" ${S.ocupado ? 'disabled' : ''}>Confirmar entrega</button>`}`;
+      <button class="cta go" data-act="entregar" ${S.ocupado ? 'disabled' : ''}>Confirmar entrega</button>`}
+  ${lote ? `<span class="lbl">Siguientes paradas (toca una para ir primero)</span>
+  <ul class="list">${l.slice(1).map((x) => `<li><button data-act="irA" data-id="${x.p.id}"><span class="ico">${x.t === 'recoger' ? '🟢' : '🟨'}</span>
+    <span><b>${esc(x.pt.n)}</b><span class="muted">${x.t === 'recoger' ? 'Recoger' : 'Entregar a ' + esc(x.p.recibe.nombre)} · ${esc(x.pt.dir)}</span></span></button></li>`).join('')}</ul>` : ''}`;
 }
 
 function vFin() {
   const p = S.fin;
-  return `<div class="grab"></div><h2>Entrega completada</h2>
+  return `<div class="grab"></div><h2>${p.puntoId ? 'Paquete dejado en el negocio' : 'Entrega completada'}</h2>
   <div class="row between"><span class="muted">Ganaste en esta entrega</span><span class="big">${money(neto(p))}</span></div>
   <p class="muted">Comisión de la app: ${money(p.precio - neto(p))}. ${PAGO_TXT[p.pago](p)}</p>
   <button class="cta" data-act="seguir">${S.enLinea ? 'Seguir conectado' : 'Volver al inicio'}</button>`;
@@ -161,16 +201,21 @@ function render() {
 function escucharMios() {
   unMios = onSnapshot(query(collection(db, PEDIDOS), where('repartidor.uid', '==', uid)), async (s) => {
     S.mios = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const act = S.mios.find((p) => ['asignado', 'recogido'].includes(p.estado)) || null;
-    const antes = S.activo;
-    S.activo = act;
-    if (act) {
-      if (!antes) { avisoSonoro(); toast('Envío asignado. Ve por el paquete.'); }
-      if (rutaDe !== act.id) { rutaDe = act.id; ruta = await calcularRuta(act.origen, act.destino); }
-      if (S.paso !== 'activo' || antes?.estado !== act.estado) { S.paso = 'activo'; render(); dibujar(); }
-    } else if (antes && S.paso === 'activo') {
-      const ahora = S.mios.find((p) => p.id === antes.id);
-      if (ahora?.estado === 'cancelado') toast('El cliente canceló el envío.');
+    const act = S.mios.filter((p) => ['asignado', 'recogido'].includes(p.estado));
+    const antes = S.activos, previo = S.activo;
+    S.activos = act;
+    if (S.sel && !act.some((p) => p.id === S.sel)) S.sel = null;
+    fijarActivo();
+    if (act.length) {
+      const nuevos = act.filter((p) => !antes.some((a) => a.id === p.id));
+      if (nuevos.length) { avisoSonoro(); toast(nuevos.length > 1 ? `${nuevos.length} envíos asignados. Revisa tu ruta.` : 'Envío asignado. Ve por el paquete.'); }
+      const a = S.activo;
+      if (rutaDe !== a.id) { rutaDe = a.id; ruta = await calcularRuta(a.origen, a.destino); }
+      const cambio = S.paso !== 'activo' || nuevos.length || previo?.id !== a.id
+        || act.some((p) => antes.find((x) => x.id === p.id)?.estado !== p.estado);
+      if (cambio) { S.paso = 'activo'; render(); dibujar(); }
+    } else if (antes.length && S.paso === 'activo') {
+      if (S.mios.some((p) => p.estado === 'cancelado' && antes.some((a) => a.id === p.id))) toast('El cliente canceló el envío.');
       S.paso = 'panel'; ruta = null; rutaDe = null; render(); dibujar();
     } else if (S.paso === 'panel') render();
   });
@@ -180,7 +225,7 @@ function conectar() {
   S.enLinea = true;
   updateDoc(doc(db, REPS, uid), { enLinea: true, pos: S.pos || null, visto: serverTimestamp() }).catch(() => {});
   unDisp = onSnapshot(query(collection(db, PEDIDOS), where('estado', '==', 'buscando')), (s) => {
-    S.disp = s.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => p.tipo === S.rep.tipo);
+    S.disp = s.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => p.tipo === S.rep.tipo && p.modo !== 'economico');
     const nuevos = S.disp.filter((p) => !vistos.has(p.id));
     nuevos.forEach((p) => vistos.add(p.id));
     if (nuevos.length && S.paso === 'panel') { avisoSonoro(); toast('Nuevo envío disponible'); }
@@ -230,7 +275,19 @@ async function entregar() {
   const p = S.activo;
   try {
     await updateDoc(doc(db, PEDIDOS, p.id), { estado: 'entregado', entregado: serverTimestamp(), actualizado: serverTimestamp() });
-    S.fin = p; S.paso = 'fin'; S.activo = null; ruta = null; rutaDe = null;
+    if (S.activos.length > 1) toast('Entrega confirmada. Sigue con la siguiente parada.');
+    else { S.fin = p; S.paso = 'fin'; S.activo = null; S.activos = []; ruta = null; rutaDe = null; }
+  } catch { toast('No se pudo confirmar. Revisa tu conexión.'); }
+  S.ocupado = false; render(); dibujar();
+}
+
+async function dejar() {
+  S.ocupado = true; render();
+  const p = S.activo;
+  try {
+    await updateDoc(doc(db, PEDIDOS, p.id), { estado: 'enpunto', dejado: serverTimestamp(), actualizado: serverTimestamp() });
+    if (S.activos.length > 1) toast('Listo. Sigue con la siguiente parada.');
+    else { S.fin = p; S.paso = 'fin'; S.activo = null; S.activos = []; ruta = null; rutaDe = null; }
   } catch { toast('No se pudo confirmar. Revisa tu conexión.'); }
   S.ocupado = false; render(); dibujar();
 }
@@ -250,10 +307,10 @@ async function registrar() {
 }
 
 function abrirHistorial() {
-  const l = S.mios.filter((p) => p.estado === 'entregado').sort((a, b) => (b.entregado?.seconds || 0) - (a.entregado?.seconds || 0));
+  const l = S.mios.filter(hecho).sort((a, b) => (cuando(b)?.seconds || 0) - (cuando(a)?.seconds || 0));
   $('#msheet').innerHTML = `<div class="grab"></div><h2>Entregas realizadas</h2>
   ${l.length ? `<ul class="list">${l.map((p) => `<li><div><span class="ico">${TIPOS[p.tipo].ic}</span><span style="flex:1"><b>${esc(p.destino.n)}</b>
-    <span class="muted">${fecha(p.entregado)}${p.calif ? ' · ★ ' + p.calif : ''}${p.propina ? ' · propina ' + money(p.propina) : ''}</span></span><b>${money(neto(p))}</b></div></li>`).join('')}</ul>`
+    <span class="muted">${fecha(cuando(p))}${p.calif ? ' · ★ ' + p.calif : ''}${p.propina ? ' · propina ' + money(p.propina) : ''}</span></span><b>${money(neto(p))}</b></div></li>`).join('')}</ul>`
     : '<p class="muted">Aún no tienes entregas. Conéctate para recibir la primera.</p>'}
   ${S.rep ? '<button class="ghost" data-act="editar">Editar mis datos</button>' : ''}
   <button class="cta dark" data-act="cerrar">Cerrar</button>`;
@@ -274,6 +331,8 @@ document.addEventListener('click', (e) => {
     case 'enviarContra': enviarContra(id); return;
     case 'recogi': recogi(); return;
     case 'entregar': entregar(); return;
+    case 'dejar': dejar(); return;
+    case 'irA': irA(id); return;
     case 'seguir': S.fin = null; S.paso = 'panel'; render(); dibujar(); return;
     case 'hist': abrirHistorial(); return;
     case 'editar': $('#modal').classList.remove('open'); if (S.paso !== 'activo') { S.paso = 'registro'; render(); } return;

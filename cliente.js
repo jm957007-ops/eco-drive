@@ -1,21 +1,23 @@
-import { db, usuario, PEDIDOS } from './firebase.js';
+import { db, usuario, PEDIDOS, PUNTOS } from './firebase.js';
 import {
   collection, addDoc, doc, onSnapshot, updateDoc, serverTimestamp,
-  query, where, getDocs, runTransaction,
+  query, where, getDocs, getDoc, runTransaction,
 } from 'firebase/firestore';
 import {
-  L, $, crearMapa, icono, ajustar, buscarLugar, direccionDe, calcularRuta, miPosicion,
-  TIPOS, CONF, aplicarTarifas, precio, money, esc, toast, sha256, lsGet, lsSet, wa, tel10, fecha,
+  L, $, crearMapa, icono, ajustar, buscarLugar, direccionDe, calcularRuta, miPosicion, dist, gmaps,
+  TIPOS, CONF, ECO, VENTANAS, aplicarTarifas, precio, precioEco, money, esc, toast, sha256, lsGet, lsSet, wa, tel10, fecha,
 } from './comun.js';
 
 const ITEMS = ['📄 Documentos', '🍱 Comida', '👕 Ropa', '📱 Electrónico', '📦 Otro'];
 const PAGOS = [['efectivo', '💵 Efectivo'], ['transferencia', '🏦 Transferencia'], ['recibe', '🤝 Paga quien recibe']];
 const SEGUIR = new URLSearchParams(location.search).get('seguir'); // enlace de rastreo para quien recibe
+const PUNTO = new URLSearchParams(location.search).get('punto'); // enlace del negocio aliado (entrega paquetes a quien los recoge)
+const CLAVE = new URLSearchParams(location.search).get('k');
 
 const S = {
   paso: 'cargando', campo: 'destino', origen: null, destino: null, sug: [], ruta: null,
   tipo: 'moto', item: '', remitente: lsGet('ed_tel', ''), nombre: '', tel: '', pago: 'efectivo',
-  ofertaOn: false, oferta: 0, id: null, p: null, ofertas: [], calif: 5, propina: 0, nota: '', enviando: false,
+  modo: 'express', ventana: 'm', punto: null, puntosOn: false, puntos: [], neg: { estado: 'cargando', punto: null, pedidos: [], pin: {} }, ofertaOn: false, oferta: 0, id: null, p: null, ofertas: [], calif: 5, propina: 0, nota: '', enviando: false,
 };
 let uid = null, unP = null, unO = null, tBuscar = null, rutaDe = null;
 const pins = lsGet('ed_pins', {});
@@ -61,7 +63,8 @@ function vInicio() {
     <div class="field"><span class="sqd"></span><input id="fd" data-campo="destino" autocomplete="off" placeholder="¿A dónde lo mandamos?" value="${esc(S.destino?.n || '')}"></div>
   </div>
   <p class="muted small">Escribe calle y colonia, o toca el mapa para marcar el punto.</p>
-  <ul class="list" id="sug"></ul>`;
+  <ul class="list" id="sug"></ul>
+  <button class="ghost" data-act="verPuntos">${S.puntosOn ? 'Ocultar negocios' : '🏪 Dejarlo en un negocio aliado (se recoge allá)'}</button>${listaPuntos()}`;
 }
 function listaSug() {
   const e = $('#sug'); if (!e) return;
@@ -70,29 +73,43 @@ function listaSug() {
     || '<li class="muted" style="padding:10px 0">Sin resultados. Agrega la colonia o la ciudad.</li>';
 }
 
+function listaPuntos() {
+  if (!S.puntosOn) return '';
+  const l = S.puntos.map((p) => ({ ...p, d: S.origen ? dist(S.origen, p) : null })).sort((a, b) => (a.d ?? 99) - (b.d ?? 99));
+  return `<span class="lbl">Negocios donde puedes dejarlo</span><ul class="list">${l.map((p) => `<li><button data-act="punto" data-id="${p.id}"><span class="ico">🏪</span>
+    <span><b>${esc(p.nombre)}</b><span class="muted">${esc(p.dir)}${p.horario ? ' · ' + esc(p.horario) : ''}${p.d != null ? ' · ' + p.d.toFixed(1) + ' km' : ''}</span></span></button></li>`).join('')
+    || '<li class="muted" style="padding:10px 0">Aún no hay negocios aliados disponibles.</li>'}</ul>`;
+}
+
 function vOpciones() {
-  const r = S.ruta, base = precio(S.tipo, r.km, r.min);
+  const r = S.ruta, eco = S.modo === 'economico';
+  const pr = (k) => (eco ? precioEco(k, r.km, r.min) : precio(k, r.km, r.min)), base = pr(S.tipo);
   return `<div class="grab"></div>
   <div class="row between"><h2 style="margin:0">¿En qué lo mandamos?</h2><span class="muted">${r.km.toFixed(1)} km · ${r.min} min</span></div>
+  <div class="veh">${[['express', '⚡', 'Express', 'Un repartidor solo para tu paquete, ahora'], ['economico', '💰', 'Económico', 'Ruta compartida: recogemos en una ventana y entregamos hoy']].map(([k, ic, n, d]) => `<button data-act="modo" data-v="${k}" aria-pressed="${S.modo === k}">
+    <span class="em">${ic}</span><span class="mid"><b>${n}</b><span class="muted">${d}</span></span>${k === 'economico' ? `<span class="pr">−${Math.round(ECO.descuento * 100)}%</span>` : ''}</button>`).join('')}</div>
+  ${eco ? `<span class="lbl">¿A qué hora pasamos a recoger?</span>
+  <div class="chips">${Object.entries(VENTANAS).map(([k, t]) => `<button class="chip" data-act="ventana" data-v="${k}" aria-pressed="${S.ventana === k}">${t}</button>`).join('')}</div>` : ''}
   <div class="veh">${Object.entries(TIPOS).map(([k, t]) => `<button data-act="tipo" data-v="${k}" aria-pressed="${k === S.tipo}">
-    <span class="em">${t.ic}</span><span class="mid"><b>${t.n}</b><span class="muted">${t.d}</span></span><span class="pr">${money(precio(k, r.km, r.min))}</span></button>`).join('')}</div>
+    <span class="em">${t.ic}</span><span class="mid"><b>${t.n}</b><span class="muted">${t.d}</span></span><span class="pr">${money(pr(k))}</span></button>`).join('')}</div>
+  ${S.punto ? `<div class="offerbox"><b>🏪 Se deja en ${esc(S.punto.nombre)}</b><br><span class="muted">${esc(S.punto.dir)}${S.punto.horario ? ' · ' + esc(S.punto.horario) : ''}. Quien lo recoge pasa con su código.</span></div>` : ''}
   <span class="lbl">¿Qué envías?</span>
   <div class="chips">${ITEMS.map((c) => `<button class="chip" data-act="item" data-v="${c}" aria-pressed="${S.item === c}">${c}</button>`).join('')}</div>
   <label class="lbl" for="iRem">Tu WhatsApp (para que el repartidor te contacte)</label>
   <input class="in" id="iRem" type="tel" inputmode="numeric" placeholder="10 dígitos" value="${esc(S.remitente)}">
-  <label class="lbl" for="iNom">¿Quién recibe?</label>
+  <label class="lbl" for="iNom">${S.punto ? '¿Quién lo va a recoger?' : '¿Quién recibe?'}</label>
   <input class="in" id="iNom" type="text" placeholder="Nombre" value="${esc(S.nombre)}">
   <input class="in" id="iTel" type="tel" inputmode="numeric" placeholder="WhatsApp de quien recibe (10 dígitos)" value="${esc(S.tel)}">
-  <div class="offerbox">
+  ${eco ? '' : `<div class="offerbox">
     <div class="row between"><span><b>Ofrece tu precio</b><br><span class="muted">Los repartidores aceptan o contraofertan</span></span>
     <button class="chip" data-act="ofertaOn" aria-pressed="${S.ofertaOn}">${S.ofertaOn ? 'Activado' : 'Activar'}</button></div>
     ${S.ofertaOn ? `<div class="stepper"><button data-act="oferta" data-v="-5" aria-label="Bajar 5 pesos">−</button><output>${money(S.oferta)}</output>
     <button data-act="oferta" data-v="5" aria-label="Subir 5 pesos">+</button></div>
     <div class="muted" style="text-align:center">Sugerido ${money(base)} · mínimo ${money(minOferta())}</div>` : ''}
-  </div>
+  </div>`}
   <span class="lbl">Pago</span>
-  <div class="chips">${PAGOS.map(([k, l]) => `<button class="chip" data-act="pago" data-v="${k}" aria-pressed="${S.pago === k}">${l}</button>`).join('')}</div>
-  <button class="cta" data-act="pedir" ${S.enviando ? 'disabled' : ''}>${S.ofertaOn ? 'Buscar repartidor con ' + money(S.oferta) : 'Enviar en ' + TIPOS[S.tipo].n + ' · ' + money(base)}</button>
+  <div class="chips">${PAGOS.filter(([k]) => !(S.punto && k === 'recibe')).map(([k, l]) => `<button class="chip" data-act="pago" data-v="${k}" aria-pressed="${S.pago === k}">${l}</button>`).join('')}</div>
+  <button class="cta" data-act="pedir" ${S.enviando ? 'disabled' : ''}>${eco ? 'Programar envío económico · ' + money(base) : S.ofertaOn ? 'Buscar repartidor con ' + money(S.oferta) : 'Enviar en ' + TIPOS[S.tipo].n + ' · ' + money(base)}</button>
   <button class="ghost" data-act="cambiar">Cambiar direcciones</button>`;
 }
 const minOferta = () => Math.round(precio(S.tipo, S.ruta.km, S.ruta.min) * 0.8 / 5) * 5;
@@ -110,9 +127,21 @@ function vBuscando() {
   <button class="ghost" data-act="cancelar">Cancelar envío</button>`;
 }
 
+function vProgramado() {
+  const p = S.p;
+  return `<div class="grab"></div><div class="row"><span class="pulse"></span><h2 style="margin:0">Envío programado</h2></div>
+  <p class="muted">Económico · ${TIPOS[p.tipo].n} · ${money(p.precio)}. Pasamos a recoger entre ${VENTANAS[p.ventana] || 'el horario elegido'} y lo entregamos el mismo día junto con otros paquetes de tu zona. Te avisamos aquí cuando un repartidor tome tu paquete.</p>
+  <button class="ghost" data-act="cancelar">Cancelar envío</button>`;
+}
+
 function textoAviso() {
   const p = S.p, r = p.repartidor, pin = pins[S.id];
   const link = `${location.origin}${location.pathname}?seguir=${S.id}`;
+  if (p.puntoId) {
+    return `Hola ${p.recibe.nombre}, te mandé un paquete por Eco Drive y lo puedes recoger en ${p.punto.nombre} (${p.punto.dir}${p.punto.horario ? ', horario: ' + p.punto.horario : ''}).`
+      + (pin ? ` Tu código para recogerlo: ${pin}. Dáselo al negocio solo cuando tengas el paquete en tus manos.` : '')
+      + ` Síguelo aquí: ${link}`;
+  }
   return `Hola ${p.recibe.nombre}, te mandé un paquete por Eco Drive a ${p.destino.n}.`
     + (r ? ` Lo lleva ${r.nombre} (${r.vehiculo}, placas ${r.placas}).` : '')
     + (pin ? ` Código de entrega: ${pin}. Dáselo al repartidor solo cuando tengas el paquete en tus manos.` : '')
@@ -123,6 +152,7 @@ function vEnCurso() {
   const p = S.p, r = p.repartidor, pin = pins[S.id];
   const titulo = p.estado === 'asignado' ? `${esc(r.nombre.split(' ')[0])} va por tu paquete` : 'Tu paquete va en camino';
   return `<div class="grab"></div><h2>${titulo}</h2>${repCard(r)}
+  ${p.puntoId ? `<p class="muted" style="margin-top:10px">🏪 Lo dejará en ${esc(p.punto.nombre)}. ${esc(p.recibe.nombre)} lo recoge allá con su código.</p>` : ''}
   ${pin ? `<div class="muted" style="margin-top:12px">Código de entrega: compártelo con ${esc(p.recibe.nombre)}</div>
     <div class="pin">${pin.split('').map((c) => `<span>${c}</span>`).join('')}</div>`
     : '<p class="muted">El código de entrega está en el celular donde se pidió el envío.</p>'}
@@ -137,7 +167,7 @@ function vEnCurso() {
 function vEntregado() {
   const p = S.p;
   return `<div class="grab"></div><h2>Paquete entregado</h2>
-  <p class="muted" style="margin-top:-6px">${esc(p.recibe.nombre)} lo recibió en ${esc(p.destino.n)} y confirmó con el código.</p>
+  <p class="muted" style="margin-top:-6px">${p.puntoId ? `${esc(p.recibe.nombre)} lo recogió en ${esc(p.punto.nombre)}` : `${esc(p.recibe.nombre)} lo recibió en ${esc(p.destino.n)}`} y confirmó con el código.</p>
   <div class="row between"><span class="muted">Total</span><span class="big">${money(p.precio + S.propina)}</span></div>
   <p style="text-align:center;margin:14px 0 0"><b>¿Cómo estuvo el servicio de ${esc(p.repartidor.nombre.split(' ')[0])}?</b></p>
   <div class="stars">${[1, 2, 3, 4, 5].map((i) => `<button data-act="calif" data-v="${i}" class="${i <= S.calif ? 'on' : ''}" aria-label="${i} estrellas">★</button>`).join('')}</div>
@@ -148,27 +178,60 @@ function vEntregado() {
   <button class="cta" data-act="calificar">Enviar calificación</button>`;
 }
 
+function vEnPunto() {
+  const p = S.p, pt = p.punto || {}, pin = pins[S.id];
+  return `<div class="grab"></div><h2>Tu paquete ya está en ${esc(pt.nombre)}</h2>
+  <p class="muted" style="margin-top:-6px">${esc(pt.dir)}${pt.horario ? ' · Horario: ' + esc(pt.horario) : ''}</p>
+  ${pin ? `<div class="muted" style="margin-top:12px">Código para recogerlo: compártelo con ${esc(p.recibe.nombre)}</div>
+    <div class="pin">${pin.split('').map((c) => `<span>${c}</span>`).join('')}</div>`
+    : '<p class="muted">El código está en el celular donde se pidió el envío.</p>'}
+  <div class="acts">
+    <a href="${gmaps(p.destino)}" target="_blank" rel="noopener"><span>🧭</span>Cómo llegar</a>
+    <a href="${wa(p.recibe.tel, textoAviso())}" target="_blank" rel="noopener"><span>📤</span>Avisar a quien recoge</a>
+    ${pt.tel ? `<a href="tel:${tel10(pt.tel)}"><span>📞</span>Negocio</a>` : ''}
+  </div>
+  <p class="muted small">El negocio solo entrega el paquete a quien le dé el código de 4 dígitos.</p>`;
+}
+
+function vNegocio() {
+  const n = S.neg;
+  if (n.estado === 'cargando') return '<div class="grab"></div><p class="muted">Conectando…</p>';
+  if (n.estado === 'error') return '<div class="grab"></div><h2>Enlace no válido</h2><p class="muted">Pide a Eco Drive un enlace nuevo para tu negocio.</p>';
+  return `<div class="grab"></div><h2>🏪 ${esc(n.punto.nombre)}</h2>
+  <p class="muted" style="margin-top:-6px">Paquetes que dejaron los repartidores. Entrégalos solo a quien te dé el código de 4 dígitos.</p>
+  ${n.pedidos.length ? n.pedidos.map((p) => `<div class="card">
+    <div class="row between"><b>Para ${esc(p.recibe.nombre)}</b><span class="muted">${fecha(p.dejado)}</span></div>
+    <span class="muted">${esc(p.item)}</span>
+    ${p.recibidoPunto ? '<p class="muted small" style="margin:6px 0 0">✔ Ya confirmaste que llegó</p>' : `<button class="ghost" data-act="negRecibido" data-id="${p.id}">Confirmar que ya llegó el paquete</button>`}
+    <input class="in" id="np_${p.id}" inputmode="numeric" maxlength="4" placeholder="Código de 4 dígitos" value="${esc(n.pin[p.id] || '')}" style="font-size:22px;letter-spacing:.3em;text-align:center">
+    <button class="cta go" data-act="negEntregar" data-id="${p.id}">Entregar a ${esc(p.recibe.nombre.split(' ')[0])}</button></div>`).join('')
+    : '<p class="muted">No hay paquetes esperando. Cuando un repartidor deje uno, aparece aquí.</p>'}`;
+}
+
 function vSeguimiento() {
   const p = S.p;
   if (!p) return '<div class="grab"></div><h2>Buscando tu envío…</h2>';
-  const txt = { buscando: 'Buscando repartidor para tu paquete', asignado: 'El repartidor va a recoger tu paquete', recogido: 'Tu paquete va en camino', entregado: 'Paquete entregado', cancelado: 'Este envío fue cancelado' }[p.estado];
+  const txt = { buscando: p.modo === 'economico' ? 'Tu paquete está programado para recogerse hoy' : 'Buscando repartidor para tu paquete', asignado: 'El repartidor va a recoger tu paquete', recogido: 'Tu paquete va en camino', enpunto: p.puntoId ? `Tu paquete ya está en ${p.punto.nombre}, listo para recoger` : 'Tu paquete ya llegó', entregado: 'Paquete entregado', cancelado: 'Este envío fue cancelado' }[p.estado];
   return `<div class="grab"></div><h2>${txt}</h2>
   <p class="muted" style="margin-top:-6px">Para ${esc(p.recibe.nombre)} · ${esc(p.destino.n)}</p>
   ${p.repartidor && p.estado !== 'cancelado' ? repCard(p.repartidor) : ''}
-  ${p.estado === 'recogido' ? `<p class="muted">Cuando llegue, revisa el paquete y dale el código de entrega que te mandaron por WhatsApp.</p>
+  ${p.estado === 'recogido' ? `<p class="muted">${p.puntoId ? 'Lo llevan a ' + esc(p.punto.nombre) + '. Te avisamos cuando esté listo para recoger.' : 'Cuando llegue, revisa el paquete y dale el código de entrega que te mandaron por WhatsApp.'}</p>
     <div class="acts"><a href="tel:${tel10(p.repartidor.tel)}"><span>📞</span>Llamar</a><a href="${wa(p.repartidor.tel, 'Hola, soy quien recibe el paquete de Eco Drive.')}" target="_blank" rel="noopener"><span>💬</span>WhatsApp</a></div>` : ''}
+  ${p.estado === 'enpunto' && p.puntoId ? `<p class="muted">${esc(p.punto.dir)}${p.punto.horario ? ' · Horario: ' + esc(p.punto.horario) : ''}. Lleva el código de 4 dígitos que te mandaron por WhatsApp.</p>
+    <div class="acts"><a href="${gmaps(p.destino)}" target="_blank" rel="noopener"><span>🧭</span>Cómo llegar</a></div>` : ''}
   ${p.estado === 'recogido' && p.pago === 'recibe' ? `<p><b>Ten listo ${money(p.precio)} para pagar el envío.</b></p>` : ''}`;
 }
 
 function render() {
-  const v = SEGUIR ? vSeguimiento
-    : ({ cargando: () => '<div class="grab"></div><p class="muted">Conectando…</p>', inicio: vInicio, opciones: vOpciones, buscando: vBuscando, asignado: vEnCurso, recogido: vEnCurso, entregado: vEntregado })[S.paso];
+  const v = PUNTO ? vNegocio : SEGUIR ? vSeguimiento
+    : ({ cargando: () => '<div class="grab"></div><p class="muted">Conectando…</p>', inicio: vInicio, opciones: vOpciones, buscando: () => (S.p?.modo === 'economico' ? vProgramado() : vBuscando()), asignado: vEnCurso, recogido: vEnCurso, enpunto: vEnPunto, entregado: vEntregado })[S.paso];
   $('#sheet').innerHTML = v();
   if (S.paso === 'inicio' && !SEGUIR) listaSug();
 }
 
 // ---------- Selección de direcciones ----------
 function elegirPunto(p) {
+  if (S.campo === 'destino' && !p.esPunto) S.punto = null; // eligió una dirección normal, no un negocio
   S[S.campo] = p;
   if (S.campo === 'origen' && !S.destino) S.campo = 'destino';
   else if (S.campo === 'destino' && !S.origen) S.campo = 'origen';
@@ -191,12 +254,14 @@ document.addEventListener('input', (e) => {
   if (t.dataset.campo) {
     S.campo = t.dataset.campo;
     S[S.campo] = null;
+    if (S.campo === 'destino') S.punto = null;
     clearTimeout(tBuscar);
     tBuscar = setTimeout(async () => { S.sug = await buscarLugar(t.value); listaSug(); }, 450);
   }
   if (t.id === 'iRem') { S.remitente = t.value; lsSet('ed_tel', t.value); }
   if (t.id === 'iNom') S.nombre = t.value;
   if (t.id === 'iTel') S.tel = t.value;
+  if (t.id?.startsWith('np_')) S.neg.pin[t.id.slice(3)] = t.value;
 });
 document.addEventListener('focusin', async (e) => {
   const t = e.target;
@@ -229,6 +294,7 @@ function seguir(id) {
       }
       if (e !== 'buscando' && unO) { unO(); unO = null; }
       if (antes === 'buscando' && e === 'asignado') toast(`${S.p.repartidor.nombre.split(' ')[0]} aceptó tu envío`);
+      if (e === 'enpunto' && antes && antes !== 'enpunto') toast(`Tu paquete ya está en ${S.p.punto?.nombre || 'el negocio'}`);
     }
     if (rutaDe !== id) { rutaDe = id; S.ruta = await calcularRuta(S.p.origen, S.p.destino); }
     if (antes !== e) { render(); dibujar(); } else { moverRep(); if (e === 'buscando') render(); }
@@ -238,7 +304,7 @@ function seguir(id) {
 function terminar() {
   unP?.(); unO?.(); unP = unO = null;
   lsSet('ed_activo', null);
-  Object.assign(S, { paso: 'inicio', campo: 'destino', destino: null, ruta: null, p: null, id: null, ofertas: [], ofertaOn: false, calif: 5, propina: 0, nota: '', nombre: '', tel: '', item: '' });
+  Object.assign(S, { modo: 'express', punto: null, puntosOn: false, paso: 'inicio', campo: 'destino', destino: null, ruta: null, p: null, id: null, ofertas: [], ofertaOn: false, calif: 5, propina: 0, nota: '', nombre: '', tel: '', item: '' });
   rutaDe = null;
   render(); dibujar();
 }
@@ -249,14 +315,17 @@ async function pedir() {
   if (tel10(S.tel).length < 10) return toast('Escribe el WhatsApp de quien recibe a 10 dígitos.');
   S.enviando = true; render();
   try {
-    const base = precio(S.tipo, S.ruta.km, S.ruta.min);
+    const eco = S.modo === 'economico';
+    const base = eco ? precioEco(S.tipo, S.ruta.km, S.ruta.min) : precio(S.tipo, S.ruta.km, S.ruta.min);
     const pin = String(1000 + Math.floor(Math.random() * 9000));
     const lim = (p) => ({ lat: p.lat, lng: p.lng, n: p.n, dir: p.dir || '' });
     const ref = await addDoc(collection(db, PEDIDOS), {
       clienteUid: uid, estado: 'buscando', tipo: S.tipo,
       origen: lim(S.origen), destino: lim(S.destino),
       km: Math.round(S.ruta.km * 10) / 10, min: S.ruta.min,
-      precio: S.ofertaOn ? S.oferta : base, precioSugerido: base, ofertaCliente: S.ofertaOn,
+      precio: eco ? base : S.ofertaOn ? S.oferta : base, precioSugerido: base, ofertaCliente: eco ? false : S.ofertaOn,
+      ...(eco ? { modo: 'economico', ventana: S.ventana, pagoRep: ECO.pagoRep } : { modo: 'express' }),
+      ...(S.punto ? { puntoId: S.punto.id, punto: { nombre: S.punto.nombre, dir: S.punto.dir, horario: S.punto.horario, tel: S.punto.tel }, pagoPunto: S.punto.pago } : {}),
       item: S.item || '📦 Otro', remitente: { tel: tel10(S.remitente) },
       recibe: { nombre: S.nombre.trim(), tel: tel10(S.tel) }, pago: S.pago,
       comision: CONF.comision, pinHash: await sha256(pin), repartidor: null, repPos: null,
@@ -287,11 +356,25 @@ async function abrirHistorial() {
   try {
     const s = await getDocs(query(collection(db, PEDIDOS), where('clienteUid', '==', uid)));
     const l = s.docs.map((d) => d.data()).sort((a, b) => (b.creado?.seconds || 0) - (a.creado?.seconds || 0));
-    const est = { buscando: 'Buscando', asignado: 'En camino', recogido: 'En camino', entregado: 'Entregado', cancelado: 'Cancelado' };
+    const est = { buscando: 'Buscando', asignado: 'En camino', recogido: 'En camino', enpunto: 'En el negocio', entregado: 'Entregado', cancelado: 'Cancelado' };
     m.innerHTML = `<div class="grab"></div><h2>Mis envíos</h2>${l.length ? `<ul class="list">${l.map((p) => `<li><div><span class="ico">${TIPOS[p.tipo].ic}</span>
-      <span style="flex:1"><b>${esc(p.destino.n)}</b><span class="muted">${est[p.estado]} · ${fecha(p.creado)} · para ${esc(p.recibe.nombre)}</span></span><b>${money(p.precio)}</b></div></li>`).join('')}</ul>`
+      <span style="flex:1"><b>${esc(p.destino.n)}</b><span class="muted">${p.modo === 'economico' && p.estado === 'buscando' ? 'Programado' : est[p.estado]} · ${fecha(p.creado)} · para ${esc(p.recibe.nombre)}</span></span><b>${money(p.precio)}</b></div></li>`).join('')}</ul>`
       : '<p class="muted">Aún no tienes envíos. Escribe a dónde va tu primer paquete.</p>'}<button class="cta dark" data-act="cerrar">Cerrar</button>`;
   } catch { m.innerHTML += '<p class="muted">No se pudo cargar el historial.</p>'; }
+}
+
+// ---------- Negocio aliado ----------
+async function iniciarNegocio() {
+  try {
+    const s = await getDoc(doc(db, PUNTOS, PUNTO));
+    if (!s.exists() || !CLAVE || (await sha256(CLAVE)) !== s.data().claveHash) throw new Error('clave');
+    S.neg.punto = s.data();
+    onSnapshot(query(collection(db, PEDIDOS), where('puntoId', '==', PUNTO)), (q) => {
+      S.neg.pedidos = q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => p.estado === 'enpunto')
+        .sort((a, b) => (a.dejado?.seconds || 0) - (b.dejado?.seconds || 0));
+      S.neg.estado = 'ok'; render();
+    }, () => { S.neg.estado = 'error'; render(); });
+  } catch (err) { console.error(err); S.neg.estado = 'error'; render(); }
 }
 
 // ---------- Acciones ----------
@@ -304,8 +387,10 @@ document.addEventListener('click', async (e) => {
       catch { toast('Activa la ubicación del celular o escribe la dirección.'); }
       return;
     case 'elegir': elegirPunto(S.sug[+b.dataset.i]); return;
-    case 'cambiar': S.paso = 'inicio'; S.destino = null; S.ruta = null; S.campo = 'destino'; render(); dibujar(); return;
+    case 'cambiar': S.paso = 'inicio'; S.punto = null; S.destino = null; S.ruta = null; S.campo = 'destino'; render(); dibujar(); return;
     case 'tipo': S.tipo = v; S.oferta = precio(v, S.ruta.km, S.ruta.min); break;
+    case 'modo': S.modo = v; S.ofertaOn = false; break;
+    case 'ventana': S.ventana = v; break;
     case 'item': S.item = S.item === v ? '' : v; break;
     case 'ofertaOn': S.ofertaOn = !S.ofertaOn; S.oferta = precio(S.tipo, S.ruta.km, S.ruta.min); break;
     case 'oferta': S.oferta = Math.max(minOferta(), S.oferta + +v); break;
@@ -324,7 +409,28 @@ document.addEventListener('click', async (e) => {
       await updateDoc(doc(db, PEDIDOS, S.id), { calif: S.calif, nota: S.nota, propina: S.propina, calificado: true }).catch(() => toast('No se pudo enviar.'));
       toast('Gracias. Tu calificación ayuda a todos.');
       return;
-    case 'hist': if (!SEGUIR) abrirHistorial(); return;
+    case 'verPuntos': S.puntosOn = !S.puntosOn; break;
+    case 'punto': {
+      const x = S.puntos.find((q) => q.id === b.dataset.id); if (!x) return;
+      S.punto = { id: x.id, nombre: x.nombre, dir: x.dir, horario: x.horario || '', tel: x.tel || '', pago: x.pago ?? 10 };
+      S.campo = 'destino'; S.puntosOn = false;
+      if (S.pago === 'recibe') S.pago = 'efectivo'; // el negocio no cobra: se paga al repartidor
+      elegirPunto({ lat: x.lat, lng: x.lng, n: '🏪 ' + x.nombre, dir: x.dir, esPunto: true });
+      return;
+    }
+    case 'negRecibido':
+      await updateDoc(doc(db, PEDIDOS, b.dataset.id), { recibidoPunto: serverTimestamp() }).catch(() => toast('No se pudo confirmar. Revisa tu conexión.'));
+      return;
+    case 'negEntregar': {
+      const p = S.neg.pedidos.find((x) => x.id === b.dataset.id); if (!p) return;
+      const pin = (S.neg.pin[p.id] || '').trim();
+      if (!/^\d{4}$/.test(pin)) return toast('Escribe el código de 4 dígitos.');
+      if (await sha256(pin) !== p.pinHash) return toast('El código no coincide. Pídelo de nuevo a quien recoge.');
+      await updateDoc(doc(db, PEDIDOS, p.id), { estado: 'entregado', entregado: serverTimestamp(), entregadoPor: 'punto', actualizado: serverTimestamp() })
+        .then(() => toast('Paquete entregado. ¡Gracias!')).catch(() => toast('No se pudo confirmar. Revisa tu conexión.'));
+      return;
+    }
+    case 'hist': if (!SEGUIR && !PUNTO) abrirHistorial(); return;
     case 'cerrar': $('#modal').classList.remove('open'); return;
     default: return;
   }
@@ -337,10 +443,15 @@ $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') $('#
   render();
   try { uid = await usuario(); }
   catch (err) { console.error(err); $('#sheet').innerHTML = '<div class="grab"></div><h2>Sin conexión</h2><p class="muted">No se pudo conectar. Revisa tu internet y recarga la página.</p>'; return; }
+  if (PUNTO) { iniciarNegocio(); return; }
   onSnapshot(doc(db, 'ecodrive_config', 'tarifas'), (s) => {
     if (!s.exists()) return;
     aplicarTarifas(s.data());
     if (S.paso === 'opciones') { S.oferta = precio(S.tipo, S.ruta.km, S.ruta.min); render(); }
+  }, () => {});
+  onSnapshot(query(collection(db, PUNTOS), where('activo', '==', true)), (s) => {
+    S.puntos = s.docs.map((d) => ({ id: d.id, ...d.data() }));
+    if (S.paso === 'inicio' && S.puntosOn) render();
   }, () => {});
   if (SEGUIR) { seguir(SEGUIR); return; }
   const activo = lsGet('ed_activo', null);

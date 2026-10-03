@@ -117,3 +117,7 @@ body.admin{overflow:auto;background:var(--surface2)}
 .grid4 input,.adm .in{margin-top:4px}
 .enlinea{width:9px;height:9px;border-radius:50%;background:var(--go);display:inline-block;margin-right:4px}
 @media (min-width:600px){.stats{grid-template-columns:repeat(4,1fr)}.grid4{grid-template-columns:repeat(4,1fr)}}
+
+/* Lotes (admin) */
+.fila input[type=checkbox]{width:22px;height:22px;flex:none}
+select.in{appearance:auto}

@@ -19,6 +19,7 @@ export const auth = getAuth(app);
 // Colecciones con prefijo para no chocar con tus otras apps
 export const PEDIDOS = 'ecodrive_pedidos';
 export const REPS = 'ecodrive_repartidores';
+export const PUNTOS = 'ecodrive_puntos'; // negocios aliados donde se dejan paquetes para recoger
 
 // Cada celular recibe un usuario anónimo que se conserva entre visitas
 export function usuario() {
