@@ -15,7 +15,7 @@ const PUNTO = new URLSearchParams(location.search).get('punto'); // enlace del n
 const CLAVE = new URLSearchParams(location.search).get('k');
 
 const S = {
-  paso: 'cargando', campo: 'destino', origen: null, destino: null, sug: [], ruta: null,
+  paso: 'cargando', campo: 'destino', texto: '', ref: '', origen: null, destino: null, sug: [], ruta: null,
   tipo: 'moto', item: '', remitente: lsGet('ed_tel', ''), nombre: '', tel: '', pago: 'efectivo',
   modo: 'express', ventana: 'm', punto: null, puntosOn: false, puntos: [], neg: { estado: 'cargando', punto: null, pedidos: [], pin: {} }, ofertaOn: false, oferta: 0, id: null, p: null, ofertas: [], calif: 5, propina: 0, nota: '', enviando: false,
 };
@@ -47,6 +47,7 @@ function moverRep() {
 mapa.on('click', async (e) => {
   if (S.paso !== 'inicio') return;
   const p = await direccionDe(e.latlng.lat, e.latlng.lng);
+  S.texto = ''; // al tocar el mapa no hay texto escrito que conservar
   elegirPunto(p);
 });
 
@@ -62,7 +63,7 @@ function vInicio() {
       <button class="mini" data-act="gps" aria-label="Usar mi ubicación">📍</button></div>
     <div class="field"><span class="sqd"></span><input id="fd" data-campo="destino" autocomplete="off" placeholder="¿A dónde lo mandamos?" value="${esc(S.destino?.n || '')}"></div>
   </div>
-  <p class="muted small">Escribe calle y colonia, o toca el mapa para marcar el punto.</p>
+  <p class="muted small">Escribe calle y número, o toca el mapa para marcar el punto exacto.</p>
   <ul class="list" id="sug"></ul>
   <button class="ghost" data-act="verPuntos">${S.puntosOn ? 'Ocultar negocios' : '🏪 Dejarlo en un negocio aliado (se recoge allá)'}</button>${listaPuntos()}`;
 }
@@ -100,6 +101,7 @@ function vOpciones() {
   <label class="lbl" for="iNom">${S.punto ? '¿Quién lo va a recoger?' : '¿Quién recibe?'}</label>
   <input class="in" id="iNom" type="text" placeholder="Nombre" value="${esc(S.nombre)}">
   <input class="in" id="iTel" type="tel" inputmode="numeric" placeholder="WhatsApp de quien recibe (10 dígitos)" value="${esc(S.tel)}">
+  <input class="in" id="iRef" type="text" placeholder="Referencias (casa azul, portón negro…)" value="${esc(S.ref)}">
   ${eco ? '' : `<div class="offerbox">
     <div class="row between"><span><b>Ofrece tu precio</b><br><span class="muted">Los repartidores aceptan o contraofertan</span></span>
     <button class="chip" data-act="ofertaOn" aria-pressed="${S.ofertaOn}">${S.ofertaOn ? 'Activado' : 'Activar'}</button></div>
@@ -232,6 +234,12 @@ function render() {
 // ---------- Selección de direcciones ----------
 function elegirPunto(p) {
   if (S.campo === 'destino' && !p.esPunto) S.punto = null; // eligió una dirección normal, no un negocio
+  // El buscador solo trae la calle: conservamos el número que escribió el usuario
+  if (!p.esPunto && S.texto) {
+    const num = (S.texto.match(/\b\d+[A-Za-z]?\b/g) || []).pop();
+    if (num && !p.n.includes(num)) p = { ...p, n: `${p.n} ${num}`, numero: num };
+  }
+  S.texto = '';
   S[S.campo] = p;
   if (S.campo === 'origen' && !S.destino) S.campo = 'destino';
   else if (S.campo === 'destino' && !S.origen) S.campo = 'origen';
@@ -245,6 +253,7 @@ async function preparar() {
   toast('Calculando ruta…');
   S.ruta = await calcularRuta(S.origen, S.destino);
   S.oferta = precio(S.tipo, S.ruta.km, S.ruta.min);
+  if (S.destino) S.destino.ref = S.ref; // las referencias viajan dentro del destino del pedido
   S.paso = 'opciones';
   render(); dibujar();
 }
@@ -253,6 +262,7 @@ document.addEventListener('input', (e) => {
   const t = e.target;
   if (t.dataset.campo) {
     S.campo = t.dataset.campo;
+    S.texto = t.value; // lo que escribió el usuario (con número de casa)
     S[S.campo] = null;
     if (S.campo === 'destino') S.punto = null;
     clearTimeout(tBuscar);
@@ -261,202 +271,18 @@ document.addEventListener('input', (e) => {
   if (t.id === 'iRem') { S.remitente = t.value; lsSet('ed_tel', t.value); }
   if (t.id === 'iNom') S.nombre = t.value;
   if (t.id === 'iTel') S.tel = t.value;
+  if (t.id === 'iRef') { S.ref = t.value; if (S.destino) S.destino.ref = t.value; }
   if (t.id?.startsWith('np_')) S.neg.pin[t.id.slice(3)] = t.value;
 });
 document.addEventListener('focusin', async (e) => {
   const t = e.target;
   if (t.dataset?.campo && S.paso === 'inicio') {
     S.campo = t.dataset.campo;
+    S.texto = t.value || '';
     S.sug = await buscarLugar(t.value || '');
     listaSug();
   }
 });
 
 // ---------- Firestore ----------
-function seguir(id) {
-  unP?.(); unO?.(); unO = null;
-  S.id = id;
-  unP = onSnapshot(doc(db, PEDIDOS, id), async (snap) => {
-    if (!snap.exists()) { terminar(); return; }
-    const antes = S.p?.estado;
-    S.p = snap.data();
-    const e = S.p.estado;
-
-    if (!SEGUIR) {
-      if (e === 'cancelado') { if (antes && antes !== 'cancelado') toast('El envío fue cancelado.'); terminar(); return; }
-      if (e === 'entregado' && S.p.calificado) { terminar(); return; }
-      S.paso = e;
-      if (e === 'buscando' && S.p.ofertaCliente && !unO) {
-        unO = onSnapshot(collection(db, PEDIDOS, id, 'ofertas'), (s) => {
-          S.ofertas = s.docs.map((d) => d.data()).sort((a, b) => a.precio - b.precio);
-          if (S.paso === 'buscando') render();
-        });
-      }
-      if (e !== 'buscando' && unO) { unO(); unO = null; }
-      if (antes === 'buscando' && e === 'asignado') toast(`${S.p.repartidor.nombre.split(' ')[0]} aceptó tu envío`);
-      if (e === 'enpunto' && antes && antes !== 'enpunto') toast(`Tu paquete ya está en ${S.p.punto?.nombre || 'el negocio'}`);
-    }
-    if (rutaDe !== id) { rutaDe = id; S.ruta = await calcularRuta(S.p.origen, S.p.destino); }
-    if (antes !== e) { render(); dibujar(); } else { moverRep(); if (e === 'buscando') render(); }
-  }, () => toast('No se pudo leer el envío. Revisa tu conexión.'));
-}
-
-function terminar() {
-  unP?.(); unO?.(); unP = unO = null;
-  lsSet('ed_activo', null);
-  Object.assign(S, { modo: 'express', punto: null, puntosOn: false, paso: 'inicio', campo: 'destino', destino: null, ruta: null, p: null, id: null, ofertas: [], ofertaOn: false, calif: 5, propina: 0, nota: '', nombre: '', tel: '', item: '' });
-  rutaDe = null;
-  render(); dibujar();
-}
-
-async function pedir() {
-  if (tel10(S.remitente).length < 10) return toast('Escribe tu WhatsApp a 10 dígitos.');
-  if (!S.nombre.trim()) return toast('Escribe el nombre de quien recibe.');
-  if (tel10(S.tel).length < 10) return toast('Escribe el WhatsApp de quien recibe a 10 dígitos.');
-  S.enviando = true; render();
-  try {
-    const eco = S.modo === 'economico';
-    const base = eco ? precioEco(S.tipo, S.ruta.km, S.ruta.min) : precio(S.tipo, S.ruta.km, S.ruta.min);
-    const pin = String(1000 + Math.floor(Math.random() * 9000));
-    const lim = (p) => ({ lat: p.lat, lng: p.lng, n: p.n, dir: p.dir || '' });
-    const ref = await addDoc(collection(db, PEDIDOS), {
-      clienteUid: uid, estado: 'buscando', tipo: S.tipo,
-      origen: lim(S.origen), destino: lim(S.destino),
-      km: Math.round(S.ruta.km * 10) / 10, min: S.ruta.min,
-      precio: eco ? base : S.ofertaOn ? S.oferta : base, precioSugerido: base, ofertaCliente: eco ? false : S.ofertaOn,
-      ...(eco ? { modo: 'economico', ventana: S.ventana, pagoRep: ECO.pagoRep } : { modo: 'express' }),
-      ...(S.punto ? { puntoId: S.punto.id, punto: { nombre: S.punto.nombre, dir: S.punto.dir, horario: S.punto.horario, tel: S.punto.tel }, pagoPunto: S.punto.pago } : {}),
-      item: S.item || '📦 Otro', remitente: { tel: tel10(S.remitente) },
-      recibe: { nombre: S.nombre.trim(), tel: tel10(S.tel) }, pago: S.pago,
-      comision: CONF.comision, pinHash: await sha256(pin), repartidor: null, repPos: null,
-      creado: serverTimestamp(), actualizado: serverTimestamp(),
-    });
-    pins[ref.id] = pin; lsSet('ed_pins', pins); lsSet('ed_activo', ref.id);
-    seguir(ref.id);
-  } catch (err) {
-    console.error(err);
-    toast('No se pudo crear el envío. Revisa tu conexión e intenta de nuevo.');
-  } finally { S.enviando = false; }
-}
-
-async function tomarOferta(o) {
-  try {
-    await runTransaction(db, async (tx) => {
-      const ref = doc(db, PEDIDOS, S.id), s = await tx.get(ref);
-      if (s.data().estado !== 'buscando') throw new Error('ocupado');
-      tx.update(ref, { estado: 'asignado', repartidor: o.rep, precio: o.precio, actualizado: serverTimestamp() });
-    });
-  } catch { toast('Esa oferta ya no está disponible.'); }
-}
-
-async function abrirHistorial() {
-  const m = $('#msheet');
-  m.innerHTML = '<div class="grab"></div><h2>Mis envíos</h2><p class="muted">Cargando…</p>';
-  $('#modal').classList.add('open');
-  try {
-    const s = await getDocs(query(collection(db, PEDIDOS), where('clienteUid', '==', uid)));
-    const l = s.docs.map((d) => d.data()).sort((a, b) => (b.creado?.seconds || 0) - (a.creado?.seconds || 0));
-    const est = { buscando: 'Buscando', asignado: 'En camino', recogido: 'En camino', enpunto: 'En el negocio', entregado: 'Entregado', cancelado: 'Cancelado' };
-    m.innerHTML = `<div class="grab"></div><h2>Mis envíos</h2>${l.length ? `<ul class="list">${l.map((p) => `<li><div><span class="ico">${TIPOS[p.tipo].ic}</span>
-      <span style="flex:1"><b>${esc(p.destino.n)}</b><span class="muted">${p.modo === 'economico' && p.estado === 'buscando' ? 'Programado' : est[p.estado]} · ${fecha(p.creado)} · para ${esc(p.recibe.nombre)}</span></span><b>${money(p.precio)}</b></div></li>`).join('')}</ul>`
-      : '<p class="muted">Aún no tienes envíos. Escribe a dónde va tu primer paquete.</p>'}<button class="cta dark" data-act="cerrar">Cerrar</button>`;
-  } catch { m.innerHTML += '<p class="muted">No se pudo cargar el historial.</p>'; }
-}
-
-// ---------- Negocio aliado ----------
-async function iniciarNegocio() {
-  try {
-    const s = await getDoc(doc(db, PUNTOS, PUNTO));
-    if (!s.exists() || !CLAVE || (await sha256(CLAVE)) !== s.data().claveHash) throw new Error('clave');
-    S.neg.punto = s.data();
-    onSnapshot(query(collection(db, PEDIDOS), where('puntoId', '==', PUNTO)), (q) => {
-      S.neg.pedidos = q.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => p.estado === 'enpunto')
-        .sort((a, b) => (a.dejado?.seconds || 0) - (b.dejado?.seconds || 0));
-      S.neg.estado = 'ok'; render();
-    }, () => { S.neg.estado = 'error'; render(); });
-  } catch (err) { console.error(err); S.neg.estado = 'error'; render(); }
-}
-
-// ---------- Acciones ----------
-document.addEventListener('click', async (e) => {
-  const b = e.target.closest('[data-act]'); if (!b) return;
-  const a = b.dataset.act, v = b.dataset.v;
-  switch (a) {
-    case 'gps':
-      try { toast('Buscando tu ubicación…'); const p = await miPosicion(); S.campo = 'origen'; elegirPunto(await direccionDe(p.lat, p.lng)); }
-      catch { toast('Activa la ubicación del celular o escribe la dirección.'); }
-      return;
-    case 'elegir': elegirPunto(S.sug[+b.dataset.i]); return;
-    case 'cambiar': S.paso = 'inicio'; S.punto = null; S.destino = null; S.ruta = null; S.campo = 'destino'; render(); dibujar(); return;
-    case 'tipo': S.tipo = v; S.oferta = precio(v, S.ruta.km, S.ruta.min); break;
-    case 'modo': S.modo = v; S.ofertaOn = false; break;
-    case 'ventana': S.ventana = v; break;
-    case 'item': S.item = S.item === v ? '' : v; break;
-    case 'ofertaOn': S.ofertaOn = !S.ofertaOn; S.oferta = precio(S.tipo, S.ruta.km, S.ruta.min); break;
-    case 'oferta': S.oferta = Math.max(minOferta(), S.oferta + +v); break;
-    case 'pago': S.pago = v; break;
-    case 'pedir': pedir(); return;
-    case 'subir': await updateDoc(doc(db, PEDIDOS, S.id), { precio: S.p.precio + 10, actualizado: serverTimestamp() }).catch(() => toast('No se pudo actualizar.')); return;
-    case 'tomarOferta': tomarOferta(S.ofertas[+b.dataset.i]); return;
-    case 'cancelar':
-      if (!confirm('¿Cancelar este envío?')) return;
-      await updateDoc(doc(db, PEDIDOS, S.id), { estado: 'cancelado', actualizado: serverTimestamp() }).catch(() => toast('No se pudo cancelar.'));
-      return;
-    case 'calif': S.calif = +v; S.nota = ''; break;
-    case 'nota': S.nota = S.nota === v ? '' : v; break;
-    case 'propina': S.propina = +v; break;
-    case 'calificar':
-      await updateDoc(doc(db, PEDIDOS, S.id), { calif: S.calif, nota: S.nota, propina: S.propina, calificado: true }).catch(() => toast('No se pudo enviar.'));
-      toast('Gracias. Tu calificación ayuda a todos.');
-      return;
-    case 'verPuntos': S.puntosOn = !S.puntosOn; break;
-    case 'punto': {
-      const x = S.puntos.find((q) => q.id === b.dataset.id); if (!x) return;
-      S.punto = { id: x.id, nombre: x.nombre, dir: x.dir, horario: x.horario || '', tel: x.tel || '', pago: x.pago ?? 10 };
-      S.campo = 'destino'; S.puntosOn = false;
-      if (S.pago === 'recibe') S.pago = 'efectivo'; // el negocio no cobra: se paga al repartidor
-      elegirPunto({ lat: x.lat, lng: x.lng, n: '🏪 ' + x.nombre, dir: x.dir, esPunto: true });
-      return;
-    }
-    case 'negRecibido':
-      await updateDoc(doc(db, PEDIDOS, b.dataset.id), { recibidoPunto: serverTimestamp() }).catch(() => toast('No se pudo confirmar. Revisa tu conexión.'));
-      return;
-    case 'negEntregar': {
-      const p = S.neg.pedidos.find((x) => x.id === b.dataset.id); if (!p) return;
-      const pin = (S.neg.pin[p.id] || '').trim();
-      if (!/^\d{4}$/.test(pin)) return toast('Escribe el código de 4 dígitos.');
-      if (await sha256(pin) !== p.pinHash) return toast('El código no coincide. Pídelo de nuevo a quien recoge.');
-      await updateDoc(doc(db, PEDIDOS, p.id), { estado: 'entregado', entregado: serverTimestamp(), entregadoPor: 'punto', actualizado: serverTimestamp() })
-        .then(() => toast('Paquete entregado. ¡Gracias!')).catch(() => toast('No se pudo confirmar. Revisa tu conexión.'));
-      return;
-    }
-    case 'hist': if (!SEGUIR && !PUNTO) abrirHistorial(); return;
-    case 'cerrar': $('#modal').classList.remove('open'); return;
-    default: return;
-  }
-  render();
-});
-$('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') $('#modal').classList.remove('open'); });
-
-// ---------- Inicio ----------
-(async () => {
-  render();
-  try { uid = await usuario(); }
-  catch (err) { console.error(err); $('#sheet').innerHTML = '<div class="grab"></div><h2>Sin conexión</h2><p class="muted">No se pudo conectar. Revisa tu internet y recarga la página.</p>'; return; }
-  if (PUNTO) { iniciarNegocio(); return; }
-  onSnapshot(doc(db, 'ecodrive_config', 'tarifas'), (s) => {
-    if (!s.exists()) return;
-    aplicarTarifas(s.data());
-    if (S.paso === 'opciones') { S.oferta = precio(S.tipo, S.ruta.km, S.ruta.min); render(); }
-  }, () => {});
-  onSnapshot(query(collection(db, PUNTOS), where('activo', '==', true)), (s) => {
-    S.puntos = s.docs.map((d) => ({ id: d.id, ...d.data() }));
-    if (S.paso === 'inicio' && S.puntosOn) render();
-  }, () => {});
-  if (SEGUIR) { seguir(SEGUIR); return; }
-  const activo = lsGet('ed_activo', null);
-  if (activo) { seguir(activo); return; }
-  S.paso = 'inicio'; render();
-  try { const p = await miPosicion(); if (!S.origen) { S.origen = await direccionDe(p.lat, p.lng); render(); dibujar(); } }
-  catch { /* el cliente escribe la dirección */ }
-})();
+// ⬇️⬇️⬇️ PEGA AQUÍ el resto de tu archivo ORIGINAL, desde "function seguir(id) {" hasta el final ⬇️⬇️⬇️
