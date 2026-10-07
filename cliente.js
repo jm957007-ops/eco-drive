@@ -238,11 +238,7 @@ function render() {
 function elegirPunto(p) {
   if (S.campo === 'destino' && !p.esPunto) S.punto = null; // eligió una dirección normal, no un negocio
   // El buscador solo trae la calle: conservamos el número que escribió el usuario
-  if (!p.esPunto && S.texto) {
-    const num = (S.texto.match(/\b\d+[A-Za-z]?\b/g) || []).pop();
-    if (num && !p.n.includes(num)) p = { ...p, n: `${p.n} ${num}`, numero: num };
-  }
-  S.texto = '';
+  if (!p.esPunto) p = { ...p, base: p.n, numero: '' };
   S[S.campo] = p;
   if (S.campo === 'origen' && !S.destino) S.campo = 'destino';
   else if (S.campo === 'destino' && !S.origen) S.campo = 'origen';
