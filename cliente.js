@@ -94,6 +94,9 @@ function vOpciones() {
   <div class="veh">${Object.entries(TIPOS).map(([k, t]) => `<button data-act="tipo" data-v="${k}" aria-pressed="${k === S.tipo}">
     <span class="em">${t.ic}</span><span class="mid"><b>${t.n}</b><span class="muted">${t.d}</span></span><span class="pr">${money(pr(k))}</span></button>`).join('')}</div>
   ${S.punto ? `<div class="offerbox"><b>🏪 Se deja en ${esc(S.punto.nombre)}</b><br><span class="muted">${esc(S.punto.dir)}${S.punto.horario ? ' · ' + esc(S.punto.horario) : ''}. Quien lo recoge pasa con su código.</span></div>` : ''}
+<span class="lbl">Número de casa</span>
+<input class="in" id="iNumO" type="text" placeholder="Número donde se recoge (obligatorio)" value="${esc(S.origen?.numero || '')}">
+${S.punto ? '' : `<input class="in" id="iNumD" type="text" placeholder="Número donde se entrega (obligatorio)" value="${esc(S.destino?.numero || '')}">`}
   <span class="lbl">¿Qué envías?</span>
   <div class="chips">${ITEMS.map((c) => `<button class="chip" data-act="item" data-v="${c}" aria-pressed="${S.item === c}">${c}</button>`).join('')}</div>
   <label class="lbl" for="iRem">Tu WhatsApp (para que el repartidor te contacte)</label>
