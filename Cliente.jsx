@@ -1,19 +1,20 @@
 import {useEffect,useState} from 'react';
 import {addDoc,collection,doc,onSnapshot,serverTimestamp} from 'firebase/firestore';
 import {db,PEDIDOS,PUNTOS} from './firebase';
-import {VEH,CONT,Mapa,DirForm,geoDir,distKm,precio,dirTxt,guardar,leer} from './comun';
+import {VEH,CONT,Mapa,DirForm,geoDir,distKm,precio,dirTxt,guardar,leer,useTarifas} from './comun';
 const V={calle:'',numero:'',colonia:'',ref:''};
 export default function Cliente(){
  const per=leer('ed_perfil',{}), bor=leer('ed_borrador',{});
  const [f,setF]=useState({wa:per.wa||'',o:{...V,...per.dir},d:V,tipo:'domicilio',punto:'',veh:'auto',eco:false,que:'',rec:'',recWa:'',oferta:false,monto:'',gp:true,...bor});
  const [co,setCo]=useState(null),[cd,setCd]=useState(null),[puntos,setPuntos]=useState([]),[folio,setFolio]=useState(''),[ped,setPed]=useState(null),[msg,setMsg]=useState('');
+ const T=useTarifas();
  const s=k=>v=>setF(x=>({...x,[k]:v}));
  useEffect(()=>guardar('ed_borrador',f),[f]);
  useEffect(()=>onSnapshot(collection(db,PUNTOS),q=>setPuntos(q.docs.map(d=>({id:d.id,...d.data()})))),[]);
  useEffect(()=>folio?onSnapshot(doc(db,PEDIDOS,folio),d=>setPed(d.data())):undefined,[folio]);
  const P=f.tipo=='punto'?puntos.find(p=>p.id==f.punto):null;
  const D=P||f.d, dest=P?[P.lat,P.lng]:cd;
- const km=co&&dest?distKm(co,dest):0, auto=km?precio(f.veh,km,f.eco):0;
+ const km=co&&dest?distKm(co,dest):0, auto=km?precio(f.veh,km,f.eco,T):0;
  const total=f.oferta&&+f.monto>0?+f.monto:auto;
  async function ubicar(dir,set){setMsg('Buscando…');const p=await geoDir(dir);setMsg(p?'':'No encontré la dirección; revisa calle y colonia.');if(p)set(p)}
  async function enviar(){
@@ -41,8 +42,8 @@ export default function Cliente(){
      {P&&<small>{dirTxt(P)}</small>}</div>
     :<DirForm t="Destino: ¿dónde entregamos?" d={f.d} set={s('d')} ok={!!cd} ubicar={()=>ubicar(f.d,setCd)}/>}
    {Object.entries(VEH).map(([k,v])=><div key={k} className={'veh '+(f.veh==k?'on':'')} onClick={()=>s('veh')(k)}>
-     <span>{v.e}</span><div><b>{v.n}</b><br/><small>{v.d}</small></div><b>{km?'$'+precio(k,km,f.eco):''}</b></div>)}
-   <label className="chk"><input type="checkbox" checked={f.eco} onChange={e=>s('eco')(e.target.checked)}/> Modo Económico (25% menos, entrega en ruta con varias paradas)</label>
+     <span>{v.e}</span><div><b>{v.n}</b><br/><small>{v.d}</small></div><b>{km?'$'+precio(k,km,f.eco,T):''}</b></div>)}
+   <label className="chk"><input type="checkbox" checked={f.eco} onChange={e=>s('eco')(e.target.checked)}/> Modo Económico ({T.eco}% menos, entrega en ruta con varias paradas)</label>
    <h4>¿Qué envías?</h4><div className="chips">{CONT.map(([e,t])=><button key={t} className={f.que==t?'on':''} onClick={()=>s('que')(t)}>{e} {t}</button>)}</div>
    <h4>Tu WhatsApp (para que el repartidor te contacte)</h4>
    <input inputMode="numeric" maxLength={10} autoComplete="off" placeholder="10 dígitos" value={f.wa} onChange={e=>s('wa')(e.target.value.replace(/\D/g,''))}/>

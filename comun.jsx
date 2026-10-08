@@ -1,4 +1,6 @@
-import {useEffect,useRef} from 'react';
+import {useEffect,useRef,useState} from 'react';
+import {doc,onSnapshot} from 'firebase/firestore';
+import {db} from './firebase';
 import L from 'leaflet';
 export const VEH={moto:{n:'Moto',e:'🏍️',d:'Sobres y paquetes chicos, hasta 10 kg',base:45,km:7},
  auto:{n:'Vehículo',e:'🚗',d:'Cajas y paquetes medianos, hasta 50 kg',base:70,km:10}};
@@ -9,7 +11,9 @@ export const guardar=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch
 export const leer=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}};
 export const waLink=(n,t)=>`https://wa.me/52${n}?text=${encodeURIComponent(t||'')}`;
 export const distKm=(a,b)=>{const r=x=>x*Math.PI/180,h=Math.sin(r(b[0]-a[0])/2)**2+Math.cos(r(a[0]))*Math.cos(r(b[0]))*Math.sin(r(b[1]-a[1])/2)**2;return 12742*Math.asin(Math.sqrt(h))*1.3};
-export const precio=(v,km,eco)=>Math.round((VEH[v].base+VEH[v].km*km)*(eco?.75:1)/5)*5;
+export const TAR={moto:{base:45,km:7},auto:{base:70,km:10},eco:25};
+export const precio=(v,km,eco,T=TAR)=>Math.round((T[v].base+T[v].km*km)*(eco?1-T.eco/100:1)/5)*5;
+export function useTarifas(){const [t,setT]=useState(TAR);useEffect(()=>onSnapshot(doc(db,'ecodrive_config','tarifas'),d=>{if(d.exists())setT({...TAR,...d.data()})}),[]);return t}
 async function geo(q){try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=mx&q='+encodeURIComponent(q+', Tamaulipas'));const j=await r.json();return j[0]?[+j[0].lat,+j[0].lon]:null}catch{return null}}
 export async function geoDir(d){for(const q of [`${d.calle} ${d.numero}, ${d.colonia}`,`${d.calle}, ${d.colonia}`,d.colonia]){const p=await geo(q);if(p)return p}return null}
 
