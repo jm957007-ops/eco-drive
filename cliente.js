@@ -257,6 +257,11 @@ async function preparar() {
   render(); dibujar();
 }
 
+function setNum(k, v) {
+  const d = S[k]; if (!d) return;
+  const numero = v.trim(), base = d.base ?? d.n;
+  S[k] = { ...d, base, numero, n: numero ? `${base} #${numero}` : base };
+}
 document.addEventListener('input', (e) => {
   const t = e.target;
   if (t.dataset.campo) {
