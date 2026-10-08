@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#FFB400">
-<meta name="description" content="Envía paquetes en moto o vehículo en Altamira, Madero y Tampico.">
-<title>Eco Drive · Envía paquetes en moto o vehículo</title>
+<meta name="description" content="App para repartidores de Eco Drive.">
+<title>Eco Drive Repartidor</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
@@ -13,12 +13,12 @@
 <body>
 <div id="mapa" aria-label="Mapa"></div>
 <div class="top">
-  <div class="brand">eco drive</div>
+  <div class="brand">eco drive <small>repartidor</small></div>
   <button class="iconbtn" data-act="hist" aria-label="Historial">☰</button>
 </div>
 <section class="sheet" id="sheet" aria-live="polite"><div class="grab"></div><p class="muted">Cargando…</p></section>
 <div class="modal" id="modal"><section class="sheet" id="msheet"></section></div>
 <div class="toast" id="toast" role="status"></div>
-<script type="module" src="/src/cliente.js"></script>
+<script type="module" src="/src/repartidor.js"></script>
 </body>
 </html>

@@ -1,3 +1,15 @@
-import {defineConfig} from 'vite';
-import react from '@vitejs/plugin-react';
-export default defineConfig({plugins:[react()]});
+import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
+
+const raiz = (f) => fileURLToPath(new URL(f, import.meta.url));
+
+export default defineConfig({
+  build: {
+    rollupOptions: {
+      input: {
+        cliente: raiz('./index.html'),
+        repartidor: raiz('./repartidor.html'),
+      },
+    },
+  },
+});
