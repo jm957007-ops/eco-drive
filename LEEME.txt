@@ -1,0 +1,3 @@
+Eco Drive v4 (sin mapa). Sube estos archivos a la raíz del repo. NO sustituyas tu firebase.js (debe exportar `db`).
+Rutas: / cliente · /#/repartidor · /#/punto · /#/admin
+Firestore: permite leer/escribir en ecodrive_pedidos, ecodrive_puntos, ecodrive_repartidores y ecodrive_tarifas_fijas.

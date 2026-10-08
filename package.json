@@ -1,18 +1,4 @@
-{
-  "name": "eco-drive",
-  "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "firebase": "^11.0.0",
-    "leaflet": "^1.9.4"
-  },
-  "devDependencies": {
-    "vite": "^6.0.0"
-  }
-}
+{"name":"eco-drive","private":true,"version":"4.0.0","type":"module",
+"scripts":{"dev":"vite","build":"vite build","preview":"vite preview"},
+"dependencies":{"firebase":"^10.12.0","jsqr":"^1.4.0","qrcode":"^1.5.4","react":"^18.3.1","react-dom":"^18.3.1"},
+"devDependencies":{"@vitejs/plugin-react":"^4.3.0","vite":"^5.2.0"}}
