@@ -1,4 +1,4 @@
-1import { db, usuario, PEDIDOS, PUNTOS } from './firebase.js';
+import { db, usuario, PEDIDOS, PUNTOS } from './firebase.js';
 import {
   collection, addDoc, doc, onSnapshot, updateDoc, serverTimestamp,
   query, where, getDocs, getDoc, runTransaction,
