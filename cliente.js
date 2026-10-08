@@ -277,6 +277,8 @@ document.addEventListener('input', (e) => {
   if (t.id === 'iTel') S.tel = t.value;
   if (t.id === 'iRef') { S.ref = t.value; if (S.destino) S.destino.ref = t.value; }
   if (t.id?.startsWith('np_')) S.neg.pin[t.id.slice(3)] = t.value;
+  if (t.id === 'iNumO') setNum('origen', t.value);
+if (t.id === 'iNumD') setNum('destino', t.value);
 });
 document.addEventListener('focusin', async (e) => {
   const t = e.target;
