@@ -7,7 +7,7 @@ const TABS=[['pedidos','Pedidos'],['repartidores','Repartidores'],['tarifas','Ta
 const P0={nombre:'',calle:'',numero:'',colonia:'',wa:''};
 const num=x=>x.replace(/\D/g,'');
 export default function Admin(){
- const ps=useCol(PEDIDOS),pt=useCol(PUNTOS),rp=useCol(REPS),tf=useCol(TARIFAS);
+ const ps=useCol(PEDIDOS).filter(p=>p.codRecoge&&p.origen&&p.destino),pt=useCol(PUNTOS),rp=useCol(REPS),tf=useCol(TARIFAS);
  const [ok,setOk]=useState(false),[pin,setPin]=useState(''),[tab,setTab]=useState('pedidos'),[msg,setMsg]=useState('');
  const [p,setP]=useState(P0),[r,setR]=useState({nombre:'',wa:'',v:'moto'}),[t,setT]=useState({nombre:'',precio:''});
  if(!ok)return <div className="app"><header><b>eco drive admin</b></header><main><input type="password" placeholder="PIN" value={pin} onChange={e=>setPin(e.target.value)}/>

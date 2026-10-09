@@ -6,7 +6,7 @@ import {PEDIDOS,REPS,VEH,dirTxt,guardar,leer,waLink,coincide} from './comun';
 export default function Repartidor(){
  const [yo,setYo]=useState(leer('ed_repartidor',null)),[w,setW]=useState(''),[ps,setPs]=useState([]),[msg,setMsg]=useState(''),[scan,setScan]=useState(null),[man,setMan]=useState(''),[co,setCo]=useState({});
  const salir=()=>{try{localStorage.removeItem('ed_repartidor')}catch{}setYo(null)};
- useEffect(()=>yo?onSnapshot(collection(db,PEDIDOS),q=>setPs(q.docs.map(d=>({id:d.id,...d.data()})))):undefined,[yo]);
+ useEffect(()=>yo?onSnapshot(collection(db,PEDIDOS),q=>setPs(q.docs.map(d=>({id:d.id,...d.data()})).filter(p=>p.codRecoge&&p.origen&&p.destino))):undefined,[yo]);
  useEffect(()=>yo?onSnapshot(query(collection(db,REPS),where('wa','==',yo.w)),q=>{if(!q.docs.some(d=>d.data().activo))salir()}):undefined,[yo?yo.w:'']);
  async function entrar(){
   if(w.length!=10)return setMsg('Escribe tu WhatsApp de 10 dígitos.');

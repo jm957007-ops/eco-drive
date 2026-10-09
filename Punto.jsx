@@ -6,7 +6,7 @@ import {PEDIDOS,PUNTOS,ESTADO,dirTxt,guardar,leer,coincide} from './comun';
 export default function Punto(){
  const [yo,setYo]=useState(leer('ed_punto',null)),[w,setW]=useState(''),[ps,setPs]=useState([]),[msg,setMsg]=useState(''),[scan,setScan]=useState(null),[man,setMan]=useState('');
  const salir=()=>{try{localStorage.removeItem('ed_punto')}catch{}setYo(null)};
- useEffect(()=>yo?onSnapshot(collection(db,PEDIDOS),q=>setPs(q.docs.map(d=>({id:d.id,...d.data()})))):undefined,[yo]);
+ useEffect(()=>yo?onSnapshot(collection(db,PEDIDOS),q=>setPs(q.docs.map(d=>({id:d.id,...d.data()})).filter(p=>p.codRecoge&&p.origen&&p.destino))):undefined,[yo]);
  async function entrar(){
   if(w.length!=10)return setMsg('Escribe el WhatsApp de 10 dígitos de tu negocio.');
   const q=await getDocs(query(collection(db,PUNTOS),where('wa','==',w)));
