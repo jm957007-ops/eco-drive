@@ -9,6 +9,19 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;900&display=swap" rel="stylesheet"/>
+
+<link rel="manifest" id="manifest-link" href="/manifest-cliente.webmanifest"/>
+<script>
+  (function () {
+    var app = new URLSearchParams(location.search).get('app');
+    var map = {
+      repartidor: '/manifest-repartidor.webmanifest',
+      admin: '/manifest-admin.webmanifest',
+      punto: '/manifest-punto.webmanifest'
+    };
+    if (map[app]) document.getElementById('manifest-link').href = map[app];
+  })();
+</script>
 </head>
 <body><div id="root"></div><script type="module" src="/main.jsx"></script></body>
 </html>
