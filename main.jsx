@@ -9,7 +9,8 @@ class Fallo extends Component{
   <pre style={{whiteSpace:'pre-wrap',fontSize:12}}>{String(this.state.e.stack||this.state.e)}</pre>
   <button onClick={()=>{try{localStorage.clear()}catch{}location.reload()}}>Borrar datos y reintentar</button></div>:this.props.children}
 }
-const h=location.hash,is=x=>h.startsWith('#/'+x);
+const q=new URLSearchParams(location.search).get('app');
+const h=location.hash,is=x=>h.startsWith('#/'+x)||q===x;
 createRoot(document.getElementById('root')).render(<Fallo>
  {is('repartidor')?<Repartidor/>:is('admin')?<Admin/>:is('punto')?<Punto/>:is('recibo')?<Recibo/>:<Cliente/>}</Fallo>);
 window.addEventListener('hashchange',()=>location.reload());
