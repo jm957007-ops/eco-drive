@@ -3,6 +3,7 @@ import {collection,doc,getDocs,onSnapshot,query,serverTimestamp,updateDoc,where}
 import {db} from './firebase';
 import Scanner from './Scanner';
 import {PEDIDOS,REPS,VEH,dirTxt,guardar,leer,waLink,coincide} from './comun';
+const MSG_UBI='Hola, soy tu repartidor de Eco Drive. ¿Me puedes enviar tu ubicación por aquí, por favor? Así llego más fácil. ¡Gracias!';
 export default function Repartidor(){
  const [yo,setYo]=useState(leer('ed_repartidor',null)),[w,setW]=useState(''),[ps,setPs]=useState([]),[msg,setMsg]=useState(''),[scan,setScan]=useState(null),[man,setMan]=useState(''),[co,setCo]=useState({});
  const salir=()=>{try{localStorage.removeItem('ed_repartidor')}catch{}setYo(null)};
@@ -33,7 +34,7 @@ export default function Repartidor(){
   <small>Hola, {yo.n}</small>
   <h4>Mis pedidos</h4>{!mine.length&&<small>Aún no tienes pedidos activos.</small>}
   {mine.map(p=><Tarjeta key={p.id} p={p}><div className="fila">
-   <a className="btn" href={waLink(p.clienteWa,'Hola, soy tu repartidor de Eco Drive')}>Cliente</a><a className="btn" href={waLink(p.recibeWa,'Hola, llevo un paquete de Eco Drive para ti')}>Quien recibe</a>
+   <a className="btn" href={waLink(p.clienteWa,MSG_UBI)}>Cliente</a><a className="btn" href={waLink(p.recibeWa,MSG_UBI)}>Quien recibe</a>
    {p.estado=='aceptado'&&bt(p,'r','Escanear paquete')}
    {p.estado=='recogido'&&(p.destino.tipo=='punto'?<button onClick={()=>up(p,{estado:'en_punto'})}>Dejé el paquete en el Punto Eco</button>:bt(p,'e','Escanear QR de quien recibe'))}
    {p.estado=='en_punto'&&<small>Esperando que el Punto Eco entregue el paquete.</small>}</div>
