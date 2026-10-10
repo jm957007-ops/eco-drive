@@ -3,7 +3,7 @@ import {addDoc,collection,deleteField,doc,onSnapshot,serverTimestamp,updateDoc} 
 import {db} from './firebase';
 import QR from './QR';
 import {PEDIDOS,PUNTOS,TARIFAS,VEH,CONT,ESTADO,Lugar,lugar,useCol,guardar,leer,waLink,cod} from './comun';
-const L0={tipo:'domicilio',calle:'',numero:'',colonia:'',ref:'',puntoId:''};
+const L0={tipo:'domicilio',calle:'',numero:'',colonia:'',municipio:'',ref:'',puntoId:''};
 export default function Cliente(){
  const per=leer('ed_perfil',{}),bor=leer('ed_borrador2',{});
  const [f,setF]=useState({wa:per.wa||'',o:{...L0,...per.dir},d:L0,veh:'auto',que:'',rec:'',recWa:'',tarifa:'',oferta:false,monto:'',gp:true,...bor});
