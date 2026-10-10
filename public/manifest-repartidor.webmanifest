@@ -1,10 +1,10 @@
 {
-  "id": "/repartidor",
+  "id": "/?app=repartidor",
   "name": "Eco Drive Repartidor",
   "short_name": "Repartidor",
   "description": "App para repartidores de Eco Drive.",
-  "start_url": "/repartidor",
-  "scope": "/repartidor",
+  "start_url": "/?app=repartidor",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0B3140",
