@@ -24,6 +24,7 @@ export default function Cliente(){
   if(e.length)return setMsg('Falta: '+e.join(', ')+'.');
   if(f.gp)guardar('ed_perfil',{wa:f.wa,dir:f.o.tipo=='domicilio'?f.o:{}});
   const r=await addDoc(collection(db,PEDIDOS),{clienteWa:f.wa,origen:O,destino:D,vehiculo:f.veh,que:f.que,recibe:f.rec,recibeWa:f.recWa,oferta:f.oferta,precio:total,estado:'pendiente',enPunto:false,codRecoge:cod(),codEntrega:cod(),creado:serverTimestamp()});
+  fetch('/api/notificar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:r.id})}).catch(()=>{});
   guardar('ed_folio',r.id);setFolio(r.id);setMsg('');setF(x=>({...x,d:L0,que:'',rec:'',recWa:'',tarifa:'',oferta:false,monto:''}));
  }
  const ref=()=>doc(db,PEDIDOS,folio);
