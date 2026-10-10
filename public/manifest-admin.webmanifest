@@ -1,10 +1,10 @@
 {
-  "id": "/admin",
+  "id": "/?app=admin",
   "name": "Eco Drive Admin",
   "short_name": "ED Admin",
   "description": "Panel de administrador de Eco Drive.",
-  "start_url": "/admin",
-  "scope": "/admin",
+  "start_url": "/?app=admin",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#F1F5F4",
