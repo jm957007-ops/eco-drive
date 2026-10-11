@@ -1,9 +1,19 @@
 import {useEffect,useState} from 'react';
-import {addDoc,collection,deleteField,doc,onSnapshot,serverTimestamp,updateDoc} from 'firebase/firestore';
+import {addDoc,collection,deleteField,doc,onSnapshot,query,serverTimestamp,updateDoc,where} from 'firebase/firestore';
 import {db} from './firebase';
 import QR from './QR';
 import {PEDIDOS,PUNTOS,TARIFAS,VEH,CONT,ESTADO,Lugar,lugar,useCol,guardar,leer,waLink,cod,calcularRuta,precioKm} from './comun';
 const L0={tipo:'domicilio',calle:'',numero:'',colonia:'',municipio:'',ref:'',puntoId:''};
+function Menu({items}){
+ const [a,setA]=useState(false);
+ return <div style={{position:'relative'}}>
+  <button onClick={()=>setA(!a)} aria-label="Menú" style={{background:'none',border:'none',color:'inherit',fontSize:28,padding:'0 10px'}}>⋮</button>
+  {a&&<><div onClick={()=>setA(false)} style={{position:'fixed',inset:0,zIndex:49}}/>
+  <div style={{position:'absolute',right:0,top:'100%',minWidth:200,background:'#fff',color:'#222',borderRadius:10,zIndex:50,boxShadow:'0 4px 16px rgba(0,0,0,.25)',overflow:'hidden'}}>
+   {items.map(([t,fn])=><button key={t} onClick={()=>{setA(false);fn()}} style={{display:'block',width:'100%',textAlign:'left',padding:'14px 16px',background:'none',border:'none',borderBottom:'1px solid #eee',fontSize:16,color:'#222'}}>{t}</button>)}
+  </div></>}
+ </div>
+}
 export default function Cliente(){
  const per=leer('ed_perfil',{}),bor=leer('ed_borrador2',{});
  const [f,setF]=useState({wa:per.wa||'',o:{...L0,...per.dir},d:L0,veh:'auto',que:'',rec:'',recWa:'',tarifa:'',oferta:false,monto:'',gp:true,...bor});
@@ -13,6 +23,18 @@ export default function Cliente(){
  const s=k=>v=>setF(x=>({...x,[k]:v}));
  useEffect(()=>guardar('ed_borrador2',f),[f]);
  useEffect(()=>folio?onSnapshot(doc(db,PEDIDOS,folio),d=>setPed(d.data())):undefined,[folio]);
+ const [vista,setVista]=useState(''),[lista,setLista]=useState(null);
+ const wa=/^\d{10}$/.test(f.wa)?f.wa:per.wa;
+ useEffect(()=>{
+  if(vista!='pedidos'||!wa)return;
+  return onSnapshot(query(collection(db,PEDIDOS),where('clienteWa','==',wa)),snap=>
+   setLista(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.creado?.seconds||0)-(a.creado?.seconds||0))));
+ },[vista,wa]);
+ const abrir=id=>{guardar('ed_folio',id);setFolio(id);setPed(null);setVista('')};
+ const nuevo=()=>{guardar('ed_folio','');setFolio('');setPed(null);setVista('')};
+ const verEstado=()=>{setVista('');if(!folio)setMsg('No tienes ningún pedido en curso.')};
+ const cab=<header style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><b>eco drive</b>
+  <Menu items={[['📦 Mis pedidos',()=>setVista('pedidos')],['📍 Estado del pedido',verEstado],['➕ Nuevo envío',nuevo]]}/></header>;
  const clave=JSON.stringify([f.o,f.d]),cv=calc&&calc.k==clave?calc:null,pk=cv?precioKm(cv.km,f.veh):0;
  const T=tarifas.find(t=>t.id==f.tarifa),total=f.oferta?+f.monto||0:(f.tarifa=='calc'?pk:(T?T.precio:0));
  async function calcular(){
@@ -38,7 +60,16 @@ export default function Cliente(){
   guardar('ed_folio',r.id);setFolio(r.id);setMsg('');setF(x=>({...x,d:L0,que:'',rec:'',recWa:'',tarifa:'',oferta:false,monto:''}));
  }
  const ref=()=>doc(db,PEDIDOS,folio);
- if(folio)return <div className="app"><header><b>eco drive</b></header><main>
+ if(vista=='pedidos')return <div className="app">{cab}<main>
+  <h4>Mis pedidos</h4>
+  {!wa?<small>Aún no hay pedidos en este teléfono.</small>
+   :lista===null?<small>Cargando…</small>
+   :!lista.length?<small>Aún no tienes pedidos.</small>
+   :lista.map(p=><div key={p.id} className="card" style={{cursor:'pointer'}} onClick={()=>abrir(p.id)}>
+     <b>{ESTADO[p.estado]||p.estado}</b> · ${p.precio}<br/>
+     <small>{p.que} → {p.recibe}{p.creado?' · '+new Date(p.creado.seconds*1000).toLocaleDateString('es-MX'):''}</small></div>)}
+  <button className="sec" onClick={()=>setVista('')}>Volver</button></main></div>;
+ if(folio)return <div className="app">{cab}<main>
   <div className="card"><h3>¡Pedido enviado!</h3><p>Estado: <b>{ESTADO[ped?.estado]||'Enviando…'}</b></p>{ped?.repartidor&&<p>Repartidor: {ped.repartidor}</p>}<p>Precio: ${ped?.precio}</p></div>
   {ped?.contra&&ped.estado=='pendiente'&&<div className="card"><b>{ped.contra.nombre} propone ${ped.contra.precio}</b><div className="fila">
    <button className="big" onClick={()=>updateDoc(ref(),{estado:'aceptado',precio:ped.contra.precio,repartidor:ped.contra.nombre,repartidorWa:ped.contra.wa,contra:deleteField()})}>Aceptar</button>
@@ -47,26 +78,3 @@ export default function Cliente(){
    <div className="card qrbox"><h4>1. QR del paquete</h4><QR texto={`EDR:${folio}:${ped.codRecoge}`}/><p className="cod">{ped.codRecoge}</p>
     <small>{ped.origen.tipo=='punto'?'Imprímelo y llévalo con el paquete al Punto Eco.':'Imprímelo o cópialo en una hoja y pégalo en el paquete.'} El repartidor lo escanea al recogerlo.</small></div>
    <div className="card"><h4>2. Aviso a quien recibe</h4><small>Quien recibe necesita su QR para confirmar la entrega.</small>
-    <a className="btn big" style={{display:'block'}} href={waLink(ped.recibeWa,`Hola ${ped.recibe}, te enviaron un paquete con Eco Drive. Cuando llegue, enseña este QR: ${location.origin}/#/recibo/${folio}/${ped.codEntrega}`)}>Enviar QR por WhatsApp</a></div></>}
-  {ped?.estado=='entregado'&&<div className="card"><b>✔ Paquete entregado</b></div>}
-  <button className="sec" onClick={()=>{guardar('ed_folio','');setFolio('');setPed(null)}}>Hacer otro envío</button></main></div>;
- return <div className="app"><header><b>eco drive</b></header><main>
-  <Lugar t="Origen: ¿dónde recogemos?" v={f.o} set={s('o')} puntos={puntos}/>
-  <Lugar t="Destino: ¿dónde entregamos?" v={f.d} set={s('d')} puntos={puntos}/>
-  <h4>Vehículo</h4>
-  {Object.entries(VEH).map(([k,v])=><div key={k} className={'veh '+(f.veh==k?'on':'')} onClick={()=>s('veh')(k)}><span>{v.e}</span><div><b>{v.n}</b><br/><small>{v.d}</small></div></div>)}
-  <h4>¿Qué envías?</h4><div className="chips">{CONT.map(([e,t])=><button key={t} className={f.que==t?'on':''} onClick={()=>s('que')(t)}>{e} {t}</button>)}</div>
-  <h4>Precio</h4>
-  {!f.oferta&&<div className={'veh '+(f.tarifa=='calc'?'on':'')} onClick={()=>{if(!calcando)cv?s('tarifa')('calc'):calcular()}}><div><b>📍 Precio por distancia</b><br/><small>{calcando?'Calculando…':cv?`Aprox. ${cv.km} km`:'Toca para calcular con tus direcciones'}</small></div><b>{cv?`$${pk}`:''}</b></div>}
-  {!f.oferta&&(tarifas.length?tarifas.map(t=><div key={t.id} className={'veh '+(f.tarifa==t.id?'on':'')} onClick={()=>s('tarifa')(t.id)}><div><b>{t.nombre}</b></div><b>${t.precio}</b></div>):<small>Aún no hay tarifas fijas: ofrece tu precio.</small>)}
-  <div className="card"><div className="fila"><div><b>Ofrece tu precio</b><br/><small>Los repartidores aceptan o contraofertan</small></div>
-   <button className={f.oferta?'on':'sec'} onClick={()=>s('oferta')(!f.oferta)}>{f.oferta?'Activado':'Activar'}</button></div>
-   {f.oferta&&<input inputMode="numeric" placeholder="Tu precio en $" value={f.monto} onChange={e=>s('monto')(e.target.value.replace(/\D/g,''))}/>}</div>
-  <h4>Tu WhatsApp (para que el repartidor te contacte)</h4>
-  <input inputMode="numeric" maxLength={10} autoComplete="off" placeholder="10 dígitos" value={f.wa} onChange={e=>s('wa')(e.target.value.replace(/\D/g,''))}/>
-  <label className="chk"><input type="checkbox" checked={f.gp} onChange={e=>s('gp')(e.target.checked)}/> Guardar mi WhatsApp y dirección de origen en este teléfono</label>
-  <h4>¿Quién recibe?</h4><input placeholder="Nombre" autoComplete="off" value={f.rec} onChange={e=>s('rec')(e.target.value)}/>
-  <input inputMode="numeric" maxLength={10} autoComplete="off" placeholder="WhatsApp de quien recibe (10 dígitos)" value={f.recWa} onChange={e=>s('recWa')(e.target.value.replace(/\D/g,''))}/>
-  {msg&&<p className="msg">{msg}</p>}
-  <button className="big" onClick={enviar}>Pedir envío {total?`· $${total}`:''}</button></main></div>;
-                                                         }
