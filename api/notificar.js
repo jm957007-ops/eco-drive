@@ -1,16 +1,26 @@
-import admin from 'firebase-admin';
-
-if(!admin.apps.length){
-  admin.initializeApp({credential:admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT))});
-}
-const db=admin.firestore();
 const EMO={moto:'🏍️',auto:'🚗'};
 const LINK='https://eco-drive-sigma.vercel.app/?app=repartidor';
 const MALOS=['messaging/registration-token-not-registered','messaging/invalid-registration-token'];
+let cache=null;
+
+async function listo(){
+  if(cache)return cache;
+  const mod=await import('firebase-admin');
+  const admin=mod.default||mod;
+  const raw=process.env.FIREBASE_SERVICE_ACCOUNT;
+  if(!raw)throw new Error('Falta la variable FIREBASE_SERVICE_ACCOUNT en Vercel (o falta hacer Redeploy)');
+  let cred;
+  try{cred=JSON.parse(raw)}catch{throw new Error('FIREBASE_SERVICE_ACCOUNT no es un JSON válido: pega el archivo completo, de { a }')}
+  if(!admin.apps.length)admin.initializeApp({credential:admin.credential.cert(cred)});
+  cache={admin,db:admin.firestore()};
+  return cache;
+}
 
 export default async function handler(req,res){
-  if(req.method!=='POST')return res.status(405).json({error:'método no permitido'});
   try{
+    const {admin,db}=await listo();
+    if(req.method!=='POST')return res.status(200).json({ok:true,estado:'función lista'});
+
     const id=req.body&&req.body.id;
     if(!id||typeof id!=='string')return res.status(400).json({error:'falta id'});
 
@@ -55,5 +65,4 @@ export default async function handler(req,res){
   }catch(e){
     return res.status(500).json({error:String(e&&e.message||e)});
   }
-                                                  }
-  
+}
