@@ -12,6 +12,47 @@ export const waLink=(n,t)=>`https://wa.me/52${n}?text=${encodeURIComponent(t||''
 export const cod=()=>Array.from(crypto.getRandomValues(new Uint8Array(6)),b=>(b%36).toString(36)).join('').toUpperCase();
 export const coincide=(p,t,txt)=>{const c=t=='r'?p.codRecoge:p.codEntrega,x=(txt||'').trim().toUpperCase();return !!c&&(x==c||x==`ED${t=='r'?'R':'E'}:${p.id}:${c}`.toUpperCase())};
 export function useCol(n){const [l,setL]=useState([]);useEffect(()=>onSnapshot(collection(db,n),q=>setL(q.docs.map(d=>({id:d.id,...d.data()})))),[n]);return l}
+
+/* ===== Tarifa por distancia (OpenStreetMap) =====
+   precio = base + km * porKm, con mínimo, redondeado a $5.
+   CAMBIA AQUÍ TUS PRECIOS: */
+export const TAR_KM={
+ moto:{base:35,km:7,min:35},
+ auto:{base:45,km:9,min:60}
+};
+export const precioKm=(km,veh)=>{const t=TAR_KM[veh]||TAR_KM.auto;return Math.max(t.min,Math.round((t.base+km*t.km)/5)*5)};
+const pausa=ms=>new Promise(r=>setTimeout(r,ms));
+const ZONA='&viewbox=-98.15,22.70,-97.65,22.10&bounded=1';
+const qTxt=(...p)=>p.filter(Boolean).join(', ')+', Tamaulipas, México';
+async function geo(q){
+ const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=mx'+ZONA+'&q='+encodeURIComponent(q));
+ const j=await r.json();
+ return j&&j[0]?{lat:+j[0].lat,lon:+j[0].lon}:null;
+}
+async function geoLugar(v){
+ const intentos=[
+  qTxt(`${v.calle||''} ${v.numero||''}`.trim(),v.colonia,v.municipio),
+  qTxt(v.colonia,v.municipio)
+ ];
+ for(let i=0;i<intentos.length;i++){
+  const p=await geo(intentos[i]);
+  if(p)return p;
+  if(i<intentos.length-1)await pausa(1100);
+ }
+ return null;
+}
+export async function calcularRuta(O,D){
+ const a=await geoLugar(O);
+ await pausa(1100);
+ const b=await geoLugar(D);
+ if(!a||!b)throw new Error('No pude ubicar una de las direcciones. Revisa la colonia y el municipio.');
+ const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false`);
+ const j=await r.json();
+ if(!j.routes||!j.routes[0])throw new Error('No pude calcular la ruta.');
+ return {km:Math.round(j.routes[0].distance/100)/10};
+}
+/* ===== fin tarifa por distancia ===== */
+
 export function Lugar({t,v,set,puntos}){
  const c=k=>({value:v[k]||'',autoComplete:'off',onChange:e=>set({...v,[k]:e.target.value})});
  const P=puntos.find(p=>p.id==v.puntoId);
