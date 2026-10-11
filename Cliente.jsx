@@ -78,3 +78,26 @@ export default function Cliente(){
    <div className="card qrbox"><h4>1. QR del paquete</h4><QR texto={`EDR:${folio}:${ped.codRecoge}`}/><p className="cod">{ped.codRecoge}</p>
     <small>{ped.origen.tipo=='punto'?'Imprímelo y llévalo con el paquete al Punto Eco.':'Imprímelo o cópialo en una hoja y pégalo en el paquete.'} El repartidor lo escanea al recogerlo.</small></div>
    <div className="card"><h4>2. Aviso a quien recibe</h4><small>Quien recibe necesita su QR para confirmar la entrega.</small>
+    <a className="btn big" style={{display:'block'}} href={waLink(ped.recibeWa,`Hola ${ped.recibe}, te enviaron un paquete con Eco Drive. Cuando llegue, enseña este QR: ${location.origin}/#/recibo/${folio}/${ped.codEntrega}`)}>Enviar QR por WhatsApp</a></div></>}
+  {ped?.estado=='entregado'&&<div className="card"><b>✔ Paquete entregado</b></div>}
+  <button className="sec" onClick={nuevo}>Hacer otro envío</button></main></div>;
+ return <div className="app">{cab}<main>
+  <Lugar t="Origen: ¿dónde recogemos?" v={f.o} set={s('o')} puntos={puntos}/>
+  <Lugar t="Destino: ¿dónde entregamos?" v={f.d} set={s('d')} puntos={puntos}/>
+  <h4>Vehículo</h4>
+  {Object.entries(VEH).map(([k,v])=><div key={k} className={'veh '+(f.veh==k?'on':'')} onClick={()=>s('veh')(k)}><span>{v.e}</span><div><b>{v.n}</b><br/><small>{v.d}</small></div></div>)}
+  <h4>¿Qué envías?</h4><div className="chips">{CONT.map(([e,t])=><button key={t} className={f.que==t?'on':''} onClick={()=>s('que')(t)}>{e} {t}</button>)}</div>
+  <h4>Precio</h4>
+  {!f.oferta&&<div className={'veh '+(f.tarifa=='calc'?'on':'')} onClick={()=>{if(!calcando)cv?s('tarifa')('calc'):calcular()}}><div><b>📍 Precio por distancia</b><br/><small>{calcando?'Calculando…':cv?`Aprox. ${cv.km} km`:'Toca para calcular con tus direcciones'}</small></div><b>{cv?`$${pk}`:''}</b></div>}
+  {!f.oferta&&(tarifas.length?tarifas.map(t=><div key={t.id} className={'veh '+(f.tarifa==t.id?'on':'')} onClick={()=>s('tarifa')(t.id)}><div><b>{t.nombre}</b></div><b>${t.precio}</b></div>):<small>Aún no hay tarifas fijas: ofrece tu precio.</small>)}
+  <div className="card"><div className="fila"><div><b>Ofrece tu precio</b><br/><small>Los repartidores aceptan o contraofertan</small></div>
+   <button className={f.oferta?'on':'sec'} onClick={()=>s('oferta')(!f.oferta)}>{f.oferta?'Activado':'Activar'}</button></div>
+   {f.oferta&&<input inputMode="numeric" placeholder="Tu precio en $" value={f.monto} onChange={e=>s('monto')(e.target.value.replace(/\D/g,''))}/>}</div>
+  <h4>Tu WhatsApp (para que el repartidor te contacte)</h4>
+  <input inputMode="numeric" maxLength={10} autoComplete="off" placeholder="10 dígitos" value={f.wa} onChange={e=>s('wa')(e.target.value.replace(/\D/g,''))}/>
+  <label className="chk"><input type="checkbox" checked={f.gp} onChange={e=>s('gp')(e.target.checked)}/> Guardar mi WhatsApp y dirección de origen en este teléfono</label>
+  <h4>¿Quién recibe?</h4><input placeholder="Nombre" autoComplete="off" value={f.rec} onChange={e=>s('rec')(e.target.value)}/>
+  <input inputMode="numeric" maxLength={10} autoComplete="off" placeholder="WhatsApp de quien recibe (10 dígitos)" value={f.recWa} onChange={e=>s('recWa')(e.target.value.replace(/\D/g,''))}/>
+  {msg&&<p className="msg">{msg}</p>}
+  <button className="big" onClick={enviar}>Pedir envío {total?`· $${total}`:''}</button></main></div>;
+}
